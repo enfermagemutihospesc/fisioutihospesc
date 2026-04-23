@@ -243,6 +243,54 @@ label{font-size:.72rem;font-weight:600;color:var(--muted);}
 .vmi-box.ativo{display:block;border-color:var(--roxo-m);}
 .vmi-box.ativo .secao-t{background:var(--roxo);color:white;}
 
+/* ── ACOMPANHAMENTO DIÁRIO ── */
+.acomp-wrap{overflow-x:auto;max-width:100%;}
+.acomp-vazio{padding:20px;text-align:center;color:var(--muted);font-style:italic;font-size:.82rem;}
+.acomp-t{border-collapse:collapse;font-size:.7rem;width:100%;min-width:600px;}
+.acomp-t th,.acomp-t td{border:1px solid var(--borda);padding:3px 6px;vertical-align:middle;}
+.acomp-t th.rotulo,.acomp-t td.rotulo{
+  background:var(--roxo-xl);font-weight:600;color:var(--texto);
+  text-align:left;position:sticky;left:0;z-index:1;
+  min-width:140px;max-width:180px;
+}
+.acomp-t th{background:var(--roxo);color:white;text-align:center;font-size:.65rem;white-space:nowrap;}
+.acomp-t th.rotulo{color:var(--roxo);}
+.acomp-t td{text-align:center;min-width:62px;white-space:nowrap;}
+.acomp-t tr.grupo td{
+  background:#fafafa;font-weight:700;color:var(--roxo-m);
+  text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em;
+}
+.acomp-t .btn-edit-col{
+  background:transparent;border:none;color:var(--azul);cursor:pointer;
+  font-size:.78rem;padding:0 4px;
+}
+.acomp-t .btn-edit-col:hover{color:var(--roxo);}
+.acomp-ev-row{
+  display:flex;gap:6px;align-items:center;padding:5px 8px;
+  background:var(--cinza);border-radius:5px;margin-bottom:4px;font-size:.78rem;
+}
+.acomp-ev-row .data{font-weight:600;color:var(--roxo);flex:0 0 85px;}
+.acomp-ev-row .texto{flex:1;}
+.acomp-ev-row .rm{background:transparent;border:none;color:var(--vermelho);cursor:pointer;padding:0 6px;}
+
+/* Tabela no PDF paisagem */
+.pdf-acomp-area{background:white;padding:14px 20px;font-family:var(--fonte);color:black;}
+.pdf-acomp-area .ph{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid black;padding-bottom:6px;margin-bottom:8px;}
+.pdf-acomp-area .ph h1{font-size:.88rem;text-align:center;flex:1;}
+.pdf-acomp-area .pid{font-size:.68rem;background:#f7f7f7;border:1px solid #ccc;padding:5px 8px;margin-bottom:8px;line-height:1.5;}
+.pdf-acomp-area .pid strong{color:black;}
+.pdf-acomp-area table{border-collapse:collapse;font-size:.62rem;width:100%;margin-bottom:8px;table-layout:fixed;}
+.pdf-acomp-area th,.pdf-acomp-area td{border:1px solid black;padding:2px 4px;}
+.pdf-acomp-area th{background:#ddd;text-align:center;font-size:.58rem;}
+.pdf-acomp-area th.rotulo,.pdf-acomp-area td.rotulo{background:#f0f0f0;text-align:left;width:22%;font-weight:600;}
+.pdf-acomp-area td{text-align:center;word-wrap:break-word;overflow:hidden;}
+.pdf-acomp-area tr.grupo td{background:#eee;font-weight:700;text-align:left;font-size:.6rem;text-transform:uppercase;}
+.pdf-acomp-area .ev{margin-top:6px;}
+.pdf-acomp-area .ev h3{font-size:.72rem;border-bottom:1px solid black;padding-bottom:2px;margin-bottom:4px;}
+.pdf-acomp-area .ev-li{font-size:.62rem;line-height:1.5;padding:2px 0;}
+.pdf-acomp-area .ev-li strong{color:black;}
+.pdf-acomp-area .foot{margin-top:10px;font-size:.58rem;color:#444;text-align:right;border-top:1px solid #888;padding-top:4px;}
+
 /* Título secundário dentro de seção */
 .sub-t{font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:0;}
 
