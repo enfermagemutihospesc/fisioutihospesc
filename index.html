@@ -348,6 +348,190 @@ const TOTAL = 10; // leitos
   </div>
 </div>
 
+<!-- TELA ACOMPANHAMENTO DIÁRIO -->
+<div id="t-acomp" class="tela" style="max-width:1100px;">
+  <div class="app-header">
+    <div><h2>📊 Acompanhamento Diário</h2><small id="acomp-sub">Leito · Paciente</small></div>
+    <div class="header-right">
+      <span class="badge" id="badge-acomp"></span>
+    </div>
+  </div>
+
+  <div style="background:white;border:1px solid var(--borda);border-top:none;border-radius:0 0 var(--r) var(--r);padding:1rem;display:flex;flex-direction:column;gap:.9rem;">
+
+    <!-- CABEÇALHO do acompanhamento (dados fixos do paciente) -->
+    <div class="secao">
+      <div class="secao-t">Dados do Paciente</div>
+      <div class="secao-c">
+        <div class="dc">
+          <div style="flex:3;"><label>Nome</label><input type="text" id="a-pac" readonly style="background:var(--cinza);"></div>
+          <div><label>Idade</label><input type="text" id="a-idade"></div>
+          <div><label>Leito</label><input type="text" id="a-leito" readonly style="background:var(--cinza);"></div>
+        </div>
+        <div class="dc">
+          <div><label>Admissão UTI</label><input type="date" id="a-adm" readonly style="background:var(--cinza);"></div>
+          <div><label>Altura (m)</label><input type="number" step="0.01" id="a-altura" placeholder="Ex: 1,70"></div>
+          <div><label>Peso predito (kg)</label><input type="number" step="0.1" id="a-peso"></div>
+        </div>
+        <div><label>Diagnósticos</label><input type="text" id="a-diag" readonly style="background:var(--cinza);"></div>
+        <div class="dc">
+          <div><label>VT 4 ml/kg</label><input type="number" step="0.1" id="a-vt4" placeholder="mL"></div>
+          <div><label>VT 6 ml/kg</label><input type="number" step="0.1" id="a-vt6" placeholder="mL"></div>
+          <div><label>VT 8 ml/kg</label><input type="number" step="0.1" id="a-vt8" placeholder="mL"></div>
+        </div>
+        <button class="btn btn-sec btn-sm" onclick="salvarCabecalhoAcomp()">💾 Salvar cabeçalho</button>
+      </div>
+    </div>
+
+    <!-- TABELA CUMULATIVA -->
+    <div class="secao">
+      <div class="secao-t">
+        Tabela de Acompanhamento
+        <span style="font-weight:400;font-size:.72rem;opacity:.8;">— role horizontalmente para ver todas as colunas</span>
+      </div>
+      <div class="secao-c" style="padding:0;">
+        <div class="acomp-wrap" id="acomp-tabela-wrap">
+          <div class="acomp-vazio">Nenhuma coluna registrada ainda. Adicione a primeira abaixo.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FORMULÁRIO PARA NOVA COLUNA OU EDIÇÃO -->
+    <div class="secao">
+      <div class="secao-t" id="ac-form-t">➕ Adicionar coluna do turno atual</div>
+      <div class="secao-c">
+        <div class="dc">
+          <div><label>Data</label><input type="date" id="ac-data"></div>
+          <div><label>Turno</label>
+            <select id="ac-turno">
+              <option value="MANHA">Manhã</option>
+              <option value="TARDE">Tarde</option>
+              <option value="NOITE">Noite</option>
+            </select>
+          </div>
+          <div><label>Hora</label><input type="time" id="ac-hora"></div>
+        </div>
+
+        <p class="sub-t">Ventilação</p>
+        <div class="dc">
+          <div><label>Oxigenoterapia</label><input type="text" id="ac-oxig" placeholder="Ex: CN 3 L/min"></div>
+          <div><label>VNI (IPAP/CPAP)</label><input type="text" id="ac-vni" placeholder="Ex: 12/5"></div>
+          <div><label>Tempo de uso VNI</label><input type="text" id="ac-tvni" placeholder="Ex: 2h"></div>
+        </div>
+        <div class="dc">
+          <div><label>Dias TOT / TQT</label><input type="text" id="ac-dtot" placeholder="Ex: TOT 5d"></div>
+          <div><label>Modo ventilatório</label>
+            <select id="ac-modo">
+              <option value="">—</option>
+              <option>VCV</option><option>PCV</option><option>PSV</option>
+              <option>SIMV</option><option>APRV</option><option>BiPAP</option>
+            </select>
+          </div>
+          <div><label>FiO₂ (%)</label><input type="number" id="ac-fio2"></div>
+        </div>
+        <div class="dc">
+          <div><label>PC/PSV</label><input type="number" id="ac-pcps"></div>
+          <div><label>PEEP</label><input type="number" id="ac-peep"></div>
+          <div><label>Volume corrente</label><input type="number" id="ac-vc"></div>
+          <div><label>Volume minuto</label><input type="number" step="0.1" id="ac-vm"></div>
+        </div>
+        <div class="dc">
+          <div><label>TRE</label>
+            <select id="ac-tre">
+              <option value="">—</option>
+              <option value="Sucesso">Sucesso</option>
+              <option value="Falha">Falha</option>
+              <option value="Em curso">Em curso</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="sub-t">Gasometria</p>
+        <div class="dc">
+          <div><label>pH</label><input type="number" step="0.01" id="ac-ph"></div>
+          <div><label>PaCO₂</label><input type="number" step="0.1" id="ac-paco2"></div>
+          <div><label>PaO₂</label><input type="number" step="0.1" id="ac-pao2"></div>
+          <div><label>HCO₃</label><input type="number" step="0.1" id="ac-hco3"></div>
+          <div><label>BE</label><input type="number" step="0.1" id="ac-be"></div>
+          <div><label>PaO₂/FiO₂</label><input type="number" step="0.1" id="ac-relacao"></div>
+        </div>
+
+        <p class="sub-t">Cuidados com dispositivos</p>
+        <div class="dc">
+          <div><label>Pressão cuff (cmH₂O)</label><input type="number" id="ac-cuff"></div>
+          <div><label>Inclinação decúbito (°)</label><input type="number" id="ac-inc"></div>
+          <div><label>Filtro HMEF (última troca)</label><input type="date" id="ac-hmef"></div>
+        </div>
+        <div class="dc">
+          <div><label>Quantidade de secreção</label>
+            <select id="ac-qsec">
+              <option value="">—</option>
+              <option value="Ausente">Ausente</option>
+              <option value="Pequena">Pequena</option>
+              <option value="Moderada">Moderada</option>
+              <option value="Grande">Grande</option>
+            </select>
+          </div>
+          <div><label>Aspecto da secreção</label>
+            <select id="ac-asec">
+              <option value="">—</option>
+              <option value="Fluida clara">Fluida clara</option>
+              <option value="Esbranquiçada">Esbranquiçada</option>
+              <option value="Esverdeada">Esverdeada</option>
+              <option value="Amarelada">Amarelada</option>
+              <option value="Hemoptóica">Hemoptóica</option>
+              <option value="Espessa">Espessa</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="sub-t">Laboratório</p>
+        <div class="dc">
+          <div><label>Leucometria</label><input type="text" id="ac-leuc"></div>
+          <div><label>Hb/Ht</label><input type="text" id="ac-hbht"></div>
+          <div><label>Plaquetas</label><input type="text" id="ac-plaq"></div>
+        </div>
+        <div class="dc">
+          <div><label>Ureia/Creatinina</label><input type="text" id="ac-urcr"></div>
+          <div><label>PCR</label><input type="text" id="ac-pcr"></div>
+          <div><label>Johns Hopkins (1–8)</label><input type="number" min="1" max="8" id="ac-jh"></div>
+        </div>
+
+        <div><label>Profissional</label><input type="text" id="ac-prof" placeholder="Nome do fisioterapeuta"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-sec btn-sm" id="btn-cancelar-edicao" style="display:none;" onclick="cancelarEdicaoColuna()">Cancelar edição</button>
+          <button class="btn btn-pri btn-sm" id="btn-salvar-coluna" onclick="salvarColunaAcomp()">💾 Salvar coluna</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- EVENTOS LIVRES -->
+    <div class="secao">
+      <div class="secao-t">Outros Eventos</div>
+      <div class="secao-c">
+        <div id="acomp-eventos"></div>
+        <div class="dc" style="margin-top:6px;">
+          <div style="flex:0 0 160px;"><label>Data</label><input type="date" id="ac-ev-data"></div>
+          <div style="flex:3;"><label>Descrição</label><input type="text" id="ac-ev-texto" placeholder="Ex: Deambulação assistida por 5 minutos..."></div>
+          <div style="flex:0 0 auto;display:flex;align-items:flex-end;">
+            <button class="btn btn-pri btn-sm" onclick="adicionarEventoAcomp()">+ Adicionar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-sec" onclick="irLeitos()">← Leitos</button>
+      <button class="btn btn-pdf" onclick="enviarAcompanhamentoDrive()">☁ Enviar PDF ao Drive</button>
+    </div>
+    <p id="acomp-status" style="font-size:.72rem;color:var(--muted);text-align:right;"></p>
+  </div>
+</div>
+
+<!-- ÁREA OCULTA para render do PDF paisagem do acompanhamento -->
+<div id="acomp-pdf-area" style="position:fixed;top:0;left:-9999px;width:1100px;background:white;z-index:-1;"></div>
+
 <!-- TELA PREVIEW -->
 <div id="t-prev" class="tela">
   <div class="app-header">
