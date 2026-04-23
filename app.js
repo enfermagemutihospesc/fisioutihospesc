@@ -851,30 +851,100 @@ function _limparCamposEditaveis(){
 }
 
 async function _herdarMedicacoes(leito){
-  // Procura evoluções anteriores deste leito no mesmo dia (outros turnos)
-  // ou do dia anterior
-  const turnos = ['MANHA','TARDE','NOITE'];
+  // Delega à função genérica abaixo
+  await _herdarCamposAnterior(leito);
+}
+
+// Busca a evolução ANTERIOR mais recente (outro turno do mesmo dia ou turno
+// do dia anterior) e herda os campos que fazem sentido herdar entre turnos.
+// NÃO herda: SSVV, condutas, HFA, observações, aspirações, data.
+async function _herdarCamposAnterior(leito){
+  const turnosOrdem = ['MANHA','TARDE','NOITE'];
   const hj = hoje();
-  // Tenta outros turnos de hoje
-  for (const t of turnos) {
+
+  // 1) Busca em outros turnos de HOJE
+  let evAnterior = null;
+  for (const t of turnosOrdem) {
     if (t === turno) continue;
     const ev = await dbGet(evKey(leito, t, hj));
-    if (ev && ev.med) {
-      _aplicarMedicacoes(ev.med);
-      return;
+    if (ev) { evAnterior = ev; break; }
+  }
+  // 2) Se não achou, busca em turnos de ONTEM
+  if (!evAnterior) {
+    const ontem = new Date();
+    ontem.setDate(ontem.getDate() - 1);
+    const ontemStr = ontem.getFullYear() + '-' + pad(ontem.getMonth()+1) + '-' + pad(ontem.getDate());
+    // Vai de trás pra frente (noite → tarde → manhã) pra pegar o mais recente
+    for (const t of ['NOITE','TARDE','MANHA']) {
+      const ev = await dbGet(evKey(leito, t, ontemStr));
+      if (ev) { evAnterior = ev; break; }
     }
   }
-  // Tenta turno anterior (dia anterior)
-  const ontem = new Date();
-  ontem.setDate(ontem.getDate() - 1);
-  const ontemStr = ontem.getFullYear() + '-' + pad(ontem.getMonth()+1) + '-' + pad(ontem.getDate());
-  for (const t of turnos) {
-    const ev = await dbGet(evKey(leito, t, ontemStr));
-    if (ev && ev.med) {
-      _aplicarMedicacoes(ev.med);
-      return;
+  if (!evAnterior) return;
+
+  // ── HERDA: Dias TOT / TQT ─────────────────────────────────────
+  if (evAnterior.dtot) setF('f-dtot', evAnterior.dtot);
+  if (evAnterior.dtqt) setF('f-dtqt', evAnterior.dtqt);
+  if (evAnterior.extb)  setF('f-extb',  evAnterior.extb);
+  if (evAnterior.reiot) setF('f-reiot', evAnterior.reiot);
+
+  // ── HERDA: Medicações em infusão ──────────────────────────────
+  if (evAnterior.med) _aplicarMedicacoes(evAnterior.med);
+
+  // ── HERDA: Avaliação clínica (AP, Glasgow, Ectoscopia, MRC, JH) ─
+  if (evAnterior.ap)  setF('f-ap',  evAnterior.ap);
+  if (evAnterior.gl)  setF('f-gl',  evAnterior.gl);
+  if (evAnterior.ect) setF('f-ect', evAnterior.ect);
+  if (evAnterior.mrc) setF('f-mrc', evAnterior.mrc);
+  if (evAnterior.jh)  setF('f-jh',  evAnterior.jh);
+
+  // ── HERDA: Suporte ventilatório (AA/CN/MV/VNI/VMI) ────────────
+  if (evAnterior.sv) {
+    const r = document.querySelector(`input[name="sv"][value="${evAnterior.sv}"]`);
+    if (r) r.checked = true;
+    if (evAnterior.svExtra) {
+      if (evAnterior.svExtra.cnLmin)  setF('f-cn-lmin',  evAnterior.svExtra.cnLmin);
+      if (evAnterior.svExtra.mvFio2)  setF('f-mv-fio2',  evAnterior.svExtra.mvFio2);
+      if (evAnterior.svExtra.mnrLmin) setF('f-mnr-lmin', evAnterior.svExtra.mnrLmin);
     }
+    toggleVMI();
   }
+
+  // ── HERDA: Parâmetros VMI (se estava em VMI) ──────────────────
+  if (evAnterior.vmi) {
+    const v = evAnterior.vmi;
+    if (v.modo)  setF('f-vmodo', v.modo);
+    if (v.vt)    setF('f-vt',    v.vt);
+    if (v.cest)  setF('f-cest',  v.cest);
+    if (v.pcps)  setF('f-pcps',  v.pcps);
+    if (v.fr)    setF('f-vfr',   v.fr);
+    if (v.raw)   setF('f-raw',   v.raw);
+    if (v.peep)  setF('f-peep',  v.peep);
+    if (v.vm)    setF('f-vm',    v.vm);
+    if (v.ppt)   setF('f-ppt',   v.ppt);
+    if (v.fio2)  setF('f-fio2',  v.fio2);
+    if (v.tins)  setF('f-tins',  v.tins);
+    if (v.dp)    setF('f-dp',    v.dp);
+    if (v.fluxo) setF('f-fluxo', v.fluxo);
+    if (v.ie)    setF('f-ie',    v.ie);
+    if (v.apeep) setF('f-apeep', v.apeep);
+  }
+
+  // ── HERDA: MRC bilateral ──────────────────────────────────────
+  if (evAnterior.mrcTab) {
+    ['ombro','cotov','punho','quad','joel','dors'].forEach(g => {
+      if (evAnterior.mrcTab[g]) {
+        if (evAnterior.mrcTab[g].d) setF(`f-mrc-${g}-d`, evAnterior.mrcTab[g].d);
+        if (evAnterior.mrcTab[g].e) setF(`f-mrc-${g}-e`, evAnterior.mrcTab[g].e);
+      }
+    });
+  }
+
+  // Aviso discreto de que houve herança
+  const fmtOrigem = evAnterior.data === hj
+    ? `turno ${_labelTurno(evAnterior.turno).toLowerCase()}`
+    : `${fmtD(evAnterior.data)} ${_labelTurno(evAnterior.turno).toLowerCase()}`;
+  toast(`↻ Campos herdados do ${fmtOrigem}`);
 }
 
 function _aplicarMedicacoes(med){
