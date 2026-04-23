@@ -56,19 +56,24 @@ function hideLoading(){
 }
 
 // ── DB (Firestore + fallback localStorage) ───────────────────────────────────
+// IMPORTANTE: usa o MESMO formato da enfermagem para poder ler uti_leitos.
+// A enfermagem grava como: { value: <dados>, updatedAt: <timestamp> }
 async function dbGet(key){
-  // Tenta localStorage primeiro (cache), depois Firestore
-  const cached = localStorage.getItem(key);
   if (!modoOffline && db) {
     try {
       const doc = await db.collection('uti').doc(key).get();
       if (doc.exists) {
-        const d = doc.data().v;
-        localStorage.setItem(key, JSON.stringify(d));
-        return d;
+        const data = doc.data();
+        // Aceita tanto "value" (enfermagem) quanto "v" (caso alguma rodada antiga tenha gravado)
+        const valor = data.value !== undefined ? data.value : data.v;
+        if (valor !== undefined) {
+          localStorage.setItem(key, JSON.stringify(valor));
+          return valor;
+        }
       }
     } catch(e) { console.warn('dbGet firestore:', e); }
   }
+  const cached = localStorage.getItem(key);
   if (cached) try { return JSON.parse(cached); } catch(e){}
   return null;
 }
@@ -76,7 +81,11 @@ async function dbSet(key, value){
   localStorage.setItem(key, JSON.stringify(value));
   if (!modoOffline && db) {
     try {
-      await db.collection('uti').doc(key).set({v: value, atualizadoEm: new Date().toISOString()});
+      // Usa o mesmo formato da enfermagem: { value: ..., updatedAt: ... }
+      await db.collection('uti').doc(key).set({
+        value,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
     } catch(e) { console.warn('dbSet firestore:', e); }
   }
 }
