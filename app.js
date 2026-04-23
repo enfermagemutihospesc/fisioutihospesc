@@ -234,7 +234,526 @@ function abrirEvolucao(){
 
 function abrirAcompanhamento(){
   fecharModalEscolha();
-  toast('📊 Acompanhamento Diário — em construção', false);
+  abrirAcomp(leitoAtual);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACOMPANHAMENTO DIÁRIO — ficha cumulativa por internação
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Estado em memória do acompanhamento sendo editado
+let acompAtual = null;     // {leito, pac, ...campos, colunas:[], eventos:[]}
+let acompEditandoIdx = -1; // índice da coluna sendo editada (-1 = nova)
+
+// Chave: fisio_acomp_<leito>_<adm>. Usa a data de admissão para garantir um
+// documento único por internação (se o paciente tem alta e volta, vira novo).
+function acompKey(leito, adm){
+  const advalid = adm || 'sem-adm';
+  return `fisio_acomp_${leito}_${advalid}`;
+}
+
+async function abrirAcomp(leito){
+  leitoAtual = leito;
+  showLoading('Carregando acompanhamento...');
+  const d = await leitosData();
+  const l = d[leito];
+  const adm = l.adm || '';
+
+  // Carrega documento existente ou inicializa um novo
+  let doc = await dbGet(acompKey(leito, adm));
+  if (!doc) {
+    // Calcula idade
+    let idade = '';
+    if (l.dn) {
+      const [y,m,dd] = l.dn.split('-').map(Number);
+      const dn = new Date(y, m-1, dd);
+      const hj = new Date();
+      idade = hj.getFullYear() - dn.getFullYear();
+      if (hj.getMonth() < dn.getMonth() || (hj.getMonth() === dn.getMonth() && hj.getDate() < dn.getDate())) idade--;
+    }
+    doc = {
+      leito,
+      pac: l.pac || '',
+      diag: l.diag || '',
+      adm: adm,
+      idade: String(idade || ''),
+      altura: '',
+      peso: '',
+      vt4: '', vt6: '', vt8: '',
+      colunas: [],
+      eventos: [],
+      criadoEm: new Date().toISOString()
+    };
+  }
+  acompAtual = doc;
+  acompEditandoIdx = -1;
+
+  // Preenche header/cabeçalho
+  setF('a-pac', doc.pac);
+  setF('a-leito', pad(leito));
+  setF('a-idade', doc.idade);
+  setF('a-adm', doc.adm);
+  setF('a-diag', doc.diag);
+  setF('a-altura', doc.altura);
+  setF('a-peso', doc.peso);
+  setF('a-vt4', doc.vt4);
+  setF('a-vt6', doc.vt6);
+  setF('a-vt8', doc.vt8);
+
+  // Preenche formulário de nova coluna com data/turno/hora atuais
+  _limparFormColuna();
+  setF('ac-data', hoje());
+  setF('ac-turno', turno);
+  const agora = new Date();
+  setF('ac-hora', pad(agora.getHours()) + ':' + pad(agora.getMinutes()));
+  setF('ac-prof', (usuarioEmail||'').split('@')[0]);
+
+  // Se já existe uma coluna para este turno/hoje, carrega em modo edição
+  const idxExistente = doc.colunas.findIndex(c => c.data === hoje() && c.turno === turno);
+  if (idxExistente >= 0) {
+    _carregarFormColuna(doc.colunas[idxExistente], idxExistente);
+    toast('Coluna deste turno já existe — editando');
+  }
+
+  _renderTabelaAcomp();
+  _renderEventosAcomp();
+
+  // Atualiza header
+  document.getElementById('acomp-sub').textContent = `Leito ${pad(leito)} · ${doc.pac} · adm ${fmtD(doc.adm)||'—'}`;
+  const b = document.getElementById('badge-acomp');
+  const mapa = { MANHA:'🌅 MANHÃ', TARDE:'☀ TARDE', NOITE:'🌙 NOITE' };
+  b.textContent = mapa[turno] || turno;
+  b.className = 'badge ' + (turno === 'NOITE' ? 'badge-n' : 'badge-d');
+
+  _ativarCaixaAltaEm(document.getElementById('t-acomp'));
+  hideLoading();
+  mostrarTela('t-acomp');
+  window.scrollTo(0,0);
+}
+
+function _limparFormColuna(){
+  const ids = ['ac-data','ac-turno','ac-hora','ac-oxig','ac-vni','ac-tvni',
+    'ac-dtot','ac-modo','ac-fio2','ac-pcps','ac-peep','ac-vc','ac-vm','ac-tre',
+    'ac-ph','ac-paco2','ac-pao2','ac-hco3','ac-be','ac-relacao',
+    'ac-cuff','ac-inc','ac-hmef','ac-qsec','ac-asec',
+    'ac-leuc','ac-hbht','ac-plaq','ac-urcr','ac-pcr','ac-jh','ac-prof'];
+  ids.forEach(id => setF(id, ''));
+  acompEditandoIdx = -1;
+  document.getElementById('btn-cancelar-edicao').style.display = 'none';
+  document.getElementById('ac-form-t').textContent = '➕ Adicionar coluna do turno atual';
+  document.getElementById('btn-salvar-coluna').textContent = '💾 Salvar coluna';
+}
+
+function _carregarFormColuna(col, idx){
+  setF('ac-data', col.data); setF('ac-turno', col.turno); setF('ac-hora', col.hora);
+  setF('ac-oxig', col.oxig); setF('ac-vni', col.vni); setF('ac-tvni', col.tvni);
+  setF('ac-dtot', col.dtot); setF('ac-modo', col.modo); setF('ac-fio2', col.fio2);
+  setF('ac-pcps', col.pcps); setF('ac-peep', col.peep);
+  setF('ac-vc', col.vc); setF('ac-vm', col.vm); setF('ac-tre', col.tre);
+  setF('ac-ph', col.ph); setF('ac-paco2', col.paco2); setF('ac-pao2', col.pao2);
+  setF('ac-hco3', col.hco3); setF('ac-be', col.be); setF('ac-relacao', col.relacao);
+  setF('ac-cuff', col.cuff); setF('ac-inc', col.inc); setF('ac-hmef', col.hmef);
+  setF('ac-qsec', col.qsec); setF('ac-asec', col.asec);
+  setF('ac-leuc', col.leuc); setF('ac-hbht', col.hbht); setF('ac-plaq', col.plaq);
+  setF('ac-urcr', col.urcr); setF('ac-pcr', col.pcr); setF('ac-jh', col.jh);
+  setF('ac-prof', col.prof);
+  acompEditandoIdx = idx;
+  document.getElementById('btn-cancelar-edicao').style.display = '';
+  document.getElementById('ac-form-t').textContent = `✏️ Editando coluna: ${fmtD(col.data)} ${_labelTurno(col.turno)}`;
+  document.getElementById('btn-salvar-coluna').textContent = '💾 Salvar alterações';
+}
+
+function editarColunaAcomp(idx){
+  if (!acompAtual || !acompAtual.colunas[idx]) return;
+  _carregarFormColuna(acompAtual.colunas[idx], idx);
+  document.getElementById('ac-form-t').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function cancelarEdicaoColuna(){
+  _limparFormColuna();
+  setF('ac-data', hoje());
+  setF('ac-turno', turno);
+  const agora = new Date();
+  setF('ac-hora', pad(agora.getHours()) + ':' + pad(agora.getMinutes()));
+  setF('ac-prof', (usuarioEmail||'').split('@')[0]);
+}
+
+function _coletarColuna(){
+  return {
+    data:   gf('ac-data'),
+    turno:  gf('ac-turno'),
+    hora:   gf('ac-hora'),
+    oxig:   gf('ac-oxig'),
+    vni:    gf('ac-vni'),
+    tvni:   gf('ac-tvni'),
+    dtot:   gf('ac-dtot'),
+    modo:   gf('ac-modo'),
+    fio2:   gf('ac-fio2'),
+    pcps:   gf('ac-pcps'),
+    peep:   gf('ac-peep'),
+    vc:     gf('ac-vc'),
+    vm:     gf('ac-vm'),
+    tre:    gf('ac-tre'),
+    ph:     gf('ac-ph'),
+    paco2:  gf('ac-paco2'),
+    pao2:   gf('ac-pao2'),
+    hco3:   gf('ac-hco3'),
+    be:     gf('ac-be'),
+    relacao:gf('ac-relacao'),
+    cuff:   gf('ac-cuff'),
+    inc:    gf('ac-inc'),
+    hmef:   gf('ac-hmef'),
+    qsec:   gf('ac-qsec'),
+    asec:   gf('ac-asec'),
+    leuc:   gf('ac-leuc'),
+    hbht:   gf('ac-hbht'),
+    plaq:   gf('ac-plaq'),
+    urcr:   gf('ac-urcr'),
+    pcr:    gf('ac-pcr'),
+    jh:     gf('ac-jh'),
+    prof:   gf('ac-prof'),
+    autor:  usuarioEmail,
+    atualizadoEm: new Date().toISOString()
+  };
+}
+
+async function salvarColunaAcomp(){
+  if (!acompAtual) return;
+  const col = _coletarColuna();
+  if (!col.data || !col.turno) { toast('Preencha data e turno', true); return; }
+
+  if (acompEditandoIdx >= 0) {
+    // Edição
+    acompAtual.colunas[acompEditandoIdx] = col;
+    toast('✓ Coluna atualizada');
+  } else {
+    // Nova — mas verifica duplicata (data + turno)
+    const dup = acompAtual.colunas.findIndex(c => c.data === col.data && c.turno === col.turno);
+    if (dup >= 0) {
+      if (!confirm(`Já existe uma coluna para ${fmtD(col.data)} ${_labelTurno(col.turno)}. Substituir?`)) return;
+      acompAtual.colunas[dup] = col;
+      toast('✓ Coluna substituída');
+    } else {
+      acompAtual.colunas.push(col);
+      toast('✓ Coluna adicionada');
+    }
+  }
+  // Ordena por data + turno (MANHA → TARDE → NOITE)
+  const ordem = { MANHA:1, TARDE:2, NOITE:3 };
+  acompAtual.colunas.sort((a,b) => {
+    if (a.data !== b.data) return a.data.localeCompare(b.data);
+    return (ordem[a.turno]||9) - (ordem[b.turno]||9);
+  });
+  acompAtual.atualizadoEm = new Date().toISOString();
+  await dbSet(acompKey(acompAtual.leito, acompAtual.adm), acompAtual);
+  _renderTabelaAcomp();
+  cancelarEdicaoColuna();
+}
+
+async function salvarCabecalhoAcomp(){
+  if (!acompAtual) return;
+  acompAtual.idade  = gf('a-idade');
+  acompAtual.altura = gf('a-altura');
+  acompAtual.peso   = gf('a-peso');
+  acompAtual.vt4    = gf('a-vt4');
+  acompAtual.vt6    = gf('a-vt6');
+  acompAtual.vt8    = gf('a-vt8');
+  acompAtual.atualizadoEm = new Date().toISOString();
+  await dbSet(acompKey(acompAtual.leito, acompAtual.adm), acompAtual);
+  toast('✓ Cabeçalho salvo');
+}
+
+// Linhas que aparecem na tabela do acompanhamento.
+// type: 'grupo' (cabeçalho de seção) ou {label, campo}
+const ACOMP_LINHAS = [
+  { type:'grupo', label:'Ventilação' },
+  { label:'Oxigenoterapia',       campo:'oxig' },
+  { label:'VNI (IPAP/CPAP)',      campo:'vni' },
+  { label:'Tempo de uso VNI',     campo:'tvni' },
+  { label:'Dias TOT/TQT',         campo:'dtot' },
+  { label:'Modo ventilatório',    campo:'modo' },
+  { label:'FiO₂ (%)',             campo:'fio2' },
+  { label:'PC/PSV',               campo:'pcps' },
+  { label:'PEEP',                 campo:'peep' },
+  { label:'Volume corrente',      campo:'vc' },
+  { label:'Volume minuto',        campo:'vm' },
+  { label:'TRE',                  campo:'tre' },
+  { type:'grupo', label:'Gasometria' },
+  { label:'pH',                   campo:'ph' },
+  { label:'PaCO₂',                campo:'paco2' },
+  { label:'PaO₂',                 campo:'pao2' },
+  { label:'HCO₃',                 campo:'hco3' },
+  { label:'BE',                   campo:'be' },
+  { label:'PaO₂/FiO₂',            campo:'relacao' },
+  { type:'grupo', label:'Cuidados' },
+  { label:'Pressão cuff (cmH₂O)', campo:'cuff' },
+  { label:'Inclinação (°)',       campo:'inc' },
+  { label:'Filtro HMEF',          campo:'hmef', fmt:'data' },
+  { label:'Quant. secreção',      campo:'qsec' },
+  { label:'Aspecto secreção',     campo:'asec' },
+  { type:'grupo', label:'Laboratório' },
+  { label:'Leucometria',          campo:'leuc' },
+  { label:'Hb/Ht',                campo:'hbht' },
+  { label:'Plaquetas',            campo:'plaq' },
+  { label:'Ureia/Creatinina',     campo:'urcr' },
+  { label:'PCR',                  campo:'pcr' },
+  { label:'Johns Hopkins',        campo:'jh' },
+];
+
+function _renderTabelaAcomp(){
+  const wrap = document.getElementById('acomp-tabela-wrap');
+  if (!acompAtual || !acompAtual.colunas.length) {
+    wrap.innerHTML = '<div class="acomp-vazio">Nenhuma coluna registrada ainda. Adicione a primeira abaixo.</div>';
+    return;
+  }
+  const cols = acompAtual.colunas;
+  let h = '<table class="acomp-t"><thead><tr><th class="rotulo">Campo</th>';
+  cols.forEach((c, idx) => {
+    h += `<th>
+      ${fmtD(c.data)}<br>
+      <small style="font-weight:400;opacity:.85;">${_labelTurno(c.turno)}${c.hora?' '+c.hora:''}</small>
+      <button class="btn-edit-col" onclick="editarColunaAcomp(${idx})" title="Editar">✎</button>
+    </th>`;
+  });
+  h += '</tr></thead><tbody>';
+  ACOMP_LINHAS.forEach(ln => {
+    if (ln.type === 'grupo') {
+      h += `<tr class="grupo"><td colspan="${cols.length+1}">${esc(ln.label)}</td></tr>`;
+      return;
+    }
+    h += `<tr><td class="rotulo">${esc(ln.label)}</td>`;
+    cols.forEach(c => {
+      let v = c[ln.campo] || '';
+      if (ln.fmt === 'data' && v) v = fmtD(v);
+      h += `<td>${esc(v)||'—'}</td>`;
+    });
+    h += '</tr>';
+  });
+  // Linha final: profissional
+  h += `<tr><td class="rotulo">Profissional</td>`;
+  cols.forEach(c => { h += `<td>${esc(c.prof)||'—'}</td>`; });
+  h += '</tr></tbody></table>';
+  wrap.innerHTML = h;
+}
+
+// ── EVENTOS LIVRES ───────────────────────────────────────────────────────────
+function _renderEventosAcomp(){
+  const cont = document.getElementById('acomp-eventos');
+  if (!acompAtual || !acompAtual.eventos || !acompAtual.eventos.length) {
+    cont.innerHTML = '<div class="acomp-vazio" style="padding:8px;">Nenhum evento registrado.</div>';
+    return;
+  }
+  cont.innerHTML = acompAtual.eventos.map((ev, idx) => `
+    <div class="acomp-ev-row">
+      <span class="data">${fmtD(ev.data)}</span>
+      <span class="texto">${esc(ev.texto)}</span>
+      <button class="rm" onclick="removerEventoAcomp(${idx})" title="Remover">×</button>
+    </div>
+  `).join('');
+}
+
+async function adicionarEventoAcomp(){
+  if (!acompAtual) return;
+  const data  = gf('ac-ev-data') || hoje();
+  const texto = gf('ac-ev-texto').trim();
+  if (!texto) { toast('Descreva o evento', true); return; }
+  if (!acompAtual.eventos) acompAtual.eventos = [];
+  acompAtual.eventos.push({
+    data, texto, autor: usuarioEmail, criadoEm: new Date().toISOString()
+  });
+  acompAtual.eventos.sort((a,b) => a.data.localeCompare(b.data));
+  acompAtual.atualizadoEm = new Date().toISOString();
+  await dbSet(acompKey(acompAtual.leito, acompAtual.adm), acompAtual);
+  setF('ac-ev-texto', '');
+  _renderEventosAcomp();
+  toast('✓ Evento adicionado');
+}
+
+async function removerEventoAcomp(idx){
+  if (!acompAtual || !acompAtual.eventos) return;
+  if (!confirm('Remover este evento?')) return;
+  acompAtual.eventos.splice(idx, 1);
+  acompAtual.atualizadoEm = new Date().toISOString();
+  await dbSet(acompKey(acompAtual.leito, acompAtual.adm), acompAtual);
+  _renderEventosAcomp();
+}
+
+// ── PDF PAISAGEM DO ACOMPANHAMENTO ───────────────────────────────────────────
+async function enviarAcompanhamentoDrive(){
+  if (!acompAtual) return;
+  if (!acompAtual.colunas.length) {
+    toast('Adicione pelo menos uma coluna antes de enviar', true);
+    return;
+  }
+  const status = document.getElementById('acomp-status');
+  status.textContent = 'Gerando PDF...'; status.style.color = 'var(--muted)';
+  showLoading('Gerando PDF...');
+
+  try {
+    const {jsPDF} = window.jspdf;
+    // A4 paisagem: 297 × 210 mm
+    const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+    const pageW = pdf.internal.pageSize.getWidth();   // 297
+    const pageH = pdf.internal.pageSize.getHeight();  // 210
+    const margin = 10;
+    const contentW = pageW - margin*2; // 277
+
+    // Divide as colunas em páginas de no máximo 8 colunas por página
+    const COLS_POR_PAG = 8;
+    const total = acompAtual.colunas.length;
+    const numPag = Math.max(1, Math.ceil(total / COLS_POR_PAG));
+
+    for (let p = 0; p < numPag; p++) {
+      const inicio = p * COLS_POR_PAG;
+      const fim = Math.min(inicio + COLS_POR_PAG, total);
+      const colsDaPagina = acompAtual.colunas.slice(inicio, fim);
+
+      // Renderiza o HTML da página na área oculta
+      const areaPdf = document.getElementById('acomp-pdf-area');
+      areaPdf.innerHTML = _renderPaginaPDFAcomp(colsDaPagina, p+1, numPag, p===numPag-1);
+
+      // Aguarda o DOM estabilizar
+      await new Promise(r => setTimeout(r, 120));
+
+      const canvas = await html2canvas(areaPdf.firstElementChild, {
+        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+        width: 1100, windowWidth: 1100
+      });
+
+      // Calcula dimensões para caber na página
+      const mmH = (canvas.height / canvas.width) * contentW;
+      let larguraUso = contentW, alturaUso = mmH;
+      const contentH = pageH - margin*2;
+      if (alturaUso > contentH) {
+        // Reduz proporcionalmente
+        const f = contentH / alturaUso;
+        alturaUso = contentH;
+        larguraUso = larguraUso * f;
+      }
+      const offsetX = margin + (contentW - larguraUso) / 2;
+
+      if (p > 0) pdf.addPage();
+      pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', offsetX, margin, larguraUso, alturaUso);
+    }
+
+    // Nome e pasta
+    const nomePac = (acompAtual.pac || '').trim();
+    const primNome = (nomePac.split(' ')[0] || 'Pac').toUpperCase();
+    const hj = hoje();
+    const [ano, mes, dia] = hj.split('-');
+    const dataBR = dia + mes + ano;
+    const pastaNome = nomePac
+      ? `Leito ${pad(acompAtual.leito)} - ${nomePac}`
+      : `Leito ${pad(acompAtual.leito)} - Sem identificacao`;
+    const titulo = `AcompFisio_L${pad(acompAtual.leito)}_${dataBR}_${primNome}`;
+
+    status.textContent = 'Enviando ao Drive...';
+    const dataUri = pdf.output('datauristring');
+    const base64 = dataUri.split(',')[1];
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        titulo,
+        arquivoBase64: base64,
+        pasta: pastaNome,
+        pastaRaizId: PASTA_ACOMPANHAMENTO_ID
+      })
+    });
+
+    status.textContent = '✓ Enviado ao Drive com sucesso';
+    status.style.color = 'var(--verde)';
+    toast('✓ Acompanhamento salvo no Drive');
+
+  } catch(err) {
+    console.error('PDF acomp:', err);
+    status.textContent = 'Erro ao gerar/enviar. Tente novamente.';
+    status.style.color = 'var(--vermelho)';
+    toast('Erro ao enviar PDF', true);
+  } finally {
+    // Limpa a área oculta
+    document.getElementById('acomp-pdf-area').innerHTML = '';
+    hideLoading();
+  }
+}
+
+// Gera o HTML de uma página do PDF do acompanhamento
+function _renderPaginaPDFAcomp(cols, pagNum, pagTotal, incluirEventos){
+  const cab = acompAtual;
+  const colsH = cols.map(c =>
+    `<th>${fmtD(c.data)}<br>${_labelTurno(c.turno)}${c.hora?'<br>'+c.hora:''}</th>`
+  ).join('');
+
+  let corpo = '';
+  ACOMP_LINHAS.forEach(ln => {
+    if (ln.type === 'grupo') {
+      corpo += `<tr class="grupo"><td colspan="${cols.length+1}">${esc(ln.label)}</td></tr>`;
+      return;
+    }
+    corpo += `<tr><td class="rotulo">${esc(ln.label)}</td>`;
+    cols.forEach(c => {
+      let v = c[ln.campo] || '';
+      if (ln.fmt === 'data' && v) v = fmtD(v);
+      corpo += `<td>${esc(v)||'—'}</td>`;
+    });
+    corpo += '</tr>';
+  });
+  // Profissional
+  corpo += `<tr><td class="rotulo">Profissional</td>`;
+  cols.forEach(c => { corpo += `<td>${esc(c.prof)||'—'}</td>`; });
+  corpo += '</tr>';
+
+  // Eventos só na última página
+  let eventosHtml = '';
+  if (incluirEventos && cab.eventos && cab.eventos.length) {
+    eventosHtml = `
+      <div class="ev">
+        <h3>Outros Eventos</h3>
+        ${cab.eventos.map(ev =>
+          `<div class="ev-li"><strong>${fmtD(ev.data)}:</strong> ${esc(ev.texto)}</div>`
+        ).join('')}
+      </div>`;
+  }
+
+  return `<div class="pdf-acomp-area">
+    <div class="ph">
+      <div style="font-size:.7rem;font-weight:700;color:var(--roxo);">🏃 HOSPESC</div>
+      <h1>HOSPITAL DOS PESCADORES<br>ACOMPANHAMENTO DIÁRIO – FISIOTERAPIA UTI</h1>
+      <div style="font-size:.65rem;color:#666;">Pág. ${pagNum}/${pagTotal}</div>
+    </div>
+
+    <div class="pid">
+      <strong>Nome:</strong> ${esc(cab.pac)||'—'}
+       &nbsp;·&nbsp; <strong>Idade:</strong> ${esc(cab.idade)||'—'}
+       &nbsp;·&nbsp; <strong>Leito:</strong> ${pad(cab.leito)}
+       &nbsp;·&nbsp; <strong>Admissão:</strong> ${fmtD(cab.adm)||'—'}
+       ${cab.altura?` &nbsp;·&nbsp; <strong>Altura:</strong> ${esc(cab.altura)} m`:''}
+       ${cab.peso?` &nbsp;·&nbsp; <strong>Peso predito:</strong> ${esc(cab.peso)} kg`:''}
+      <br><strong>Diagnósticos:</strong> ${esc(cab.diag)||'—'}
+      ${(cab.vt4||cab.vt6||cab.vt8) ? `<br><strong>VT alvo:</strong>
+        ${cab.vt4?'4ml/kg='+esc(cab.vt4)+' ':''}
+        ${cab.vt6?'6ml/kg='+esc(cab.vt6)+' ':''}
+        ${cab.vt8?'8ml/kg='+esc(cab.vt8):''}` : ''}
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="rotulo">Campo</th>
+          ${colsH}
+        </tr>
+      </thead>
+      <tbody>${corpo}</tbody>
+    </table>
+
+    ${eventosHtml}
+
+    <div class="foot">
+      Gerado em ${new Date().toLocaleString('pt-BR')} por ${esc(usuarioEmail)||'—'}
+    </div>
+  </div>`;
 }
 
 // ── FORMULÁRIO DE EVOLUÇÃO ───────────────────────────────────────────────────
