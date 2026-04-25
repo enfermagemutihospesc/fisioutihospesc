@@ -36,8 +36,8 @@ const FIREBASE_CONFIG = {
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHhgR5tmL8nmvN2juaTOnUU1HWw1CCGM8jB1krDHAQf0cNwxIEk0JjxFpc-BMjAn-L/exec';
 
 // IDs das pastas de destino no Drive
-const PASTA_EVOLUCAO_ID       = '1J9YUFQPGPi5QQJFVOuCprS_CZEE1lRUL';
-const PASTA_ACOMPANHAMENTO_ID = '11J5lUrWT8zAMbVYFjMNzQcJCVgT4-YxY';
+const PASTA_EVOLUCAO_ID       = '1Y-V29PJqfqhOLwklbBfuJwnTDmaTphrB';
+const PASTA_ACOMPANHAMENTO_ID = '1aNipM5SiCkBt5uBhIp3oGcBAJ__i8YtB';
 
 const TOTAL = 10; // leitos
 </script>
@@ -61,24 +61,20 @@ const TOTAL = 10; // leitos
   </div>
 </div>
 
-<!-- TELA TURNO (Manhã/Tarde/Noite) -->
+<!-- TELA TURNO (DIURNO/NOTURNO) -->
 <div id="t-turno" style="display:none;">
   <div class="logo-h">
     <h1>HOSPITAL DOS PESCADORES – UTI</h1>
     <p>Fisioterapia · Selecione o turno</p>
   </div>
   <div class="turno-cards">
-    <button class="turno-btn" onclick="escolherTurno('MANHA')">
-      <span class="turno-icon">🌅</span>
-      <span class="turno-label">Manhã<br><small style="font-size:.68rem;opacity:.85;">07–13h</small></span>
-    </button>
-    <button class="turno-btn" onclick="escolherTurno('TARDE')">
+    <button class="turno-btn" onclick="escolherTurno('DIURNO')">
       <span class="turno-icon">☀️</span>
-      <span class="turno-label">Tarde<br><small style="font-size:.68rem;opacity:.85;">13–19h</small></span>
+      <span class="turno-label">Turno<br>Diurno</span>
     </button>
-    <button class="turno-btn" onclick="escolherTurno('NOITE')">
+    <button class="turno-btn" onclick="escolherTurno('NOTURNO')">
       <span class="turno-icon">🌙</span>
-      <span class="turno-label">Noite<br><small style="font-size:.68rem;opacity:.85;">19–07h</small></span>
+      <span class="turno-label">Turno<br>Noturno</span>
     </button>
   </div>
   <div class="sync-status" id="sync-status">
