@@ -119,7 +119,7 @@ const TOTAL = 10; // leitos
         <span class="btn-opcao-icon">📋</span>
         <span class="btn-opcao-texto">
           <strong>Evolução Fisioterapia</strong>
-          <small>Ficha do turno atual (Manhã/Tarde/Noite)</small>
+          <small>Ficha do turno atual (Diurno/Noturno)</small>
         </span>
       </button>
       <button class="btn-opcao acomp" onclick="abrirAcompanhamento()">
@@ -171,7 +171,7 @@ const TOTAL = 10; // leitos
     <div class="secao">
       <div class="secao-t">Estado Geral (HFA)</div>
       <div class="secao-c">
-        <textarea id="f-hfa" placeholder="História funcional e atual..." style="min-height:70px;"></textarea>
+        <textarea id="f-hfa" autocapitalize="characters" placeholder="História funcional e atual..." style="min-height:70px;"></textarea>
       </div>
     </div>
 
@@ -196,10 +196,10 @@ const TOTAL = 10; // leitos
     <div class="secao">
       <div class="secao-t">Avaliação Clínica</div>
       <div class="secao-c">
-        <div><label>AP (Ausculta Pulmonar)</label><input type="text" id="f-ap" placeholder="Ex: MV+ bilateral, roncos difusos..."></div>
+        <div><label>AP (Ausculta Pulmonar)</label><input type="text" id="f-ap" autocapitalize="characters" placeholder="Ex: MV+ bilateral, roncos difusos..."></div>
         <div class="dc">
-          <div><label>Glasgow / Ramsay</label><input type="text" id="f-gl" placeholder="Ex: 15 / 2"></div>
-          <div><label>Ectoscopia respiratória</label><input type="text" id="f-ect" placeholder="Ex: eupneico, uso de MAR..."></div>
+          <div><label>Glasgow / Ramsay</label><input type="text" id="f-gl" autocapitalize="characters" placeholder="Ex: 15 / 2"></div>
+          <div><label>Ectoscopia respiratória</label><input type="text" id="f-ect" autocapitalize="characters" placeholder="Ex: eupneico, uso de MAR..."></div>
         </div>
         <div class="dc">
           <div><label>Total MRC</label><input type="number" id="f-mrc" min="0" max="60" placeholder="0–60"></div>
@@ -230,7 +230,7 @@ const TOTAL = 10; // leitos
         <div class="dc">
           <div><label>FC (bpm)</label><input type="number" id="f-fc" min="0" max="250"></div>
           <div><label>FR (mrm)</label><input type="number" id="f-fr" min="0" max="80"></div>
-          <div><label>PA (mmHg)</label><input type="text" id="f-pa" placeholder="Ex: 120x80"></div>
+          <div><label>PA (mmHg)</label><input type="text" id="f-pa" autocapitalize="characters" placeholder="Ex: 120x80"></div>
           <div><label>SpO₂ (%)</label><input type="number" id="f-spo2" min="0" max="100"></div>
           <div><label>Temp (°C)</label><input type="number" step="0.1" id="f-temp" min="33" max="42"></div>
         </div>
@@ -269,7 +269,7 @@ const TOTAL = 10; // leitos
         </div>
         <div class="dc">
           <div><label>Fluxo</label><input type="number" id="f-fluxo"></div>
-          <div><label>I:E</label><input type="text" id="f-ie" placeholder="1:2"></div>
+          <div><label>I:E</label><input type="text" id="f-ie" autocapitalize="characters" placeholder="1:2"></div>
           <div><label>Auto-PEEP</label><input type="number" id="f-apeep"></div>
         </div>
       </div>
@@ -319,13 +319,13 @@ const TOTAL = 10; // leitos
     <div class="secao">
       <div class="secao-t">Conduta Respiratória</div>
       <div class="secao-c">
-        <textarea id="f-cr" placeholder="Ex: desmame ventilatório, manobras de higiene brônquica..." style="min-height:80px;"></textarea>
+        <textarea id="f-cr" autocapitalize="characters" placeholder="Ex: desmame ventilatório, manobras de higiene brônquica..." style="min-height:80px;"></textarea>
       </div>
     </div>
     <div class="secao">
       <div class="secao-t">Conduta Motora</div>
       <div class="secao-c">
-        <textarea id="f-cm" placeholder="Ex: cinesioterapia passiva MMII e MMSS, sedestação beira leito..." style="min-height:80px;"></textarea>
+        <textarea id="f-cm" autocapitalize="characters" placeholder="Ex: cinesioterapia passiva MMII e MMSS, sedestação beira leito..." style="min-height:80px;"></textarea>
       </div>
     </div>
 
@@ -333,7 +333,7 @@ const TOTAL = 10; // leitos
     <div class="secao">
       <div class="secao-t">Observações</div>
       <div class="secao-c">
-        <textarea id="f-obs" placeholder="Intercorrências, orientações, encaminhamentos..." style="min-height:100px;"></textarea>
+        <textarea id="f-obs" autocapitalize="characters" placeholder="Intercorrências, orientações, encaminhamentos..." style="min-height:100px;"></textarea>
       </div>
     </div>
 
@@ -400,9 +400,8 @@ const TOTAL = 10; // leitos
           <div><label>Data</label><input type="date" id="ac-data"></div>
           <div><label>Turno</label>
             <select id="ac-turno">
-              <option value="MANHA">Manhã</option>
-              <option value="TARDE">Tarde</option>
-              <option value="NOITE">Noite</option>
+              <option value="DIURNO">Diurno</option>
+              <option value="NOTURNO">Noturno</option>
             </select>
           </div>
           <div><label>Hora</label><input type="time" id="ac-hora"></div>
@@ -410,7 +409,7 @@ const TOTAL = 10; // leitos
 
         <p class="sub-t">Ventilação</p>
         <div class="dc">
-          <div><label>Oxigenoterapia</label><input type="text" id="ac-oxig" placeholder="Ex: CN 3 L/min"></div>
+          <div><label>Oxigenoterapia</label><input type="text" id="ac-oxig" autocapitalize="characters" placeholder="Ex: CN 3 L/min"></div>
           <div><label>VNI (IPAP/CPAP)</label><input type="text" id="ac-vni" placeholder="Ex: 12/5"></div>
           <div><label>Tempo de uso VNI</label><input type="text" id="ac-tvni" placeholder="Ex: 2h"></div>
         </div>
@@ -493,7 +492,7 @@ const TOTAL = 10; // leitos
           <div><label>Johns Hopkins (1–8)</label><input type="number" min="1" max="8" id="ac-jh"></div>
         </div>
 
-        <div><label>Profissional</label><input type="text" id="ac-prof" placeholder="Nome do fisioterapeuta"></div>
+        <div><label>Profissional</label><input type="text" id="ac-prof" autocapitalize="characters" placeholder="Nome do fisioterapeuta"></div>
 
         <div class="btn-row">
           <button class="btn btn-sec btn-sm" id="btn-cancelar-edicao" style="display:none;" onclick="cancelarEdicaoColuna()">Cancelar edição</button>
@@ -509,7 +508,7 @@ const TOTAL = 10; // leitos
         <div id="acomp-eventos"></div>
         <div class="dc" style="margin-top:6px;">
           <div style="flex:0 0 160px;"><label>Data</label><input type="date" id="ac-ev-data"></div>
-          <div style="flex:3;"><label>Descrição</label><input type="text" id="ac-ev-texto" placeholder="Ex: Deambulação assistida por 5 minutos..."></div>
+          <div style="flex:3;"><label>Descrição</label><input type="text" id="ac-ev-texto" autocapitalize="characters" placeholder="Ex: Deambulação assistida por 5 minutos..."></div>
           <div style="flex:0 0 auto;display:flex;align-items:flex-end;">
             <button class="btn btn-pri btn-sm" onclick="adicionarEventoAcomp()">+ Adicionar</button>
           </div>
