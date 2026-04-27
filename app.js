@@ -639,7 +639,7 @@ async function enviarAcompanhamentoDrive(){
 
       const canvas = await html2canvas(areaPdf.firstElementChild, {
         scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
-        width: 1100, windowWidth: 1100
+        width: 1400, windowWidth: 1400
       });
 
       // Calcula dimensões para caber na página
