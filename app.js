@@ -18,6 +18,7 @@ try {
 
 // ── ESTADO GLOBAL ────────────────────────────────────────────────────────────
 let turno = '', leitoAtual = 0, usuarioEmail = '';
+const memCache = {}; // cache em memória para leituras paralelas
 
 // ── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -59,6 +60,7 @@ function hideLoading(){
 // IMPORTANTE: usa o MESMO formato da enfermagem para poder ler uti_leitos.
 // A enfermagem grava como: { value: <dados>, updatedAt: <timestamp> }
 async function dbGet(key){
+  if (memCache[key] !== undefined) return memCache[key];
   if (!modoOffline && db) {
     try {
       const doc = await db.collection('uti').doc(key).get();
@@ -67,6 +69,7 @@ async function dbGet(key){
         // Aceita tanto "value" (enfermagem) quanto "v" (caso alguma rodada antiga tenha gravado)
         const valor = data.value !== undefined ? data.value : data.v;
         if (valor !== undefined) {
+          memCache[key] = valor;
           localStorage.setItem(key, JSON.stringify(valor));
           return valor;
         }
@@ -74,10 +77,20 @@ async function dbGet(key){
     } catch(e) { console.warn('dbGet firestore:', e); }
   }
   const cached = localStorage.getItem(key);
-  if (cached) try { return JSON.parse(cached); } catch(e){}
+  if (cached) try {
+    const v = JSON.parse(cached);
+    memCache[key] = v;
+    return v;
+  } catch(e){}
   return null;
 }
+async function dbGetMany(keys){
+  // Leitura paralela com Promise.all; usa cache em memória quando disponível
+  const results = await Promise.all(keys.map(k => dbGet(k)));
+  return Object.fromEntries(keys.map((k, i) => [k, results[i]]));
+}
 async function dbSet(key, value){
+  memCache[key] = value;
   localStorage.setItem(key, JSON.stringify(value));
   if (!modoOffline && db) {
     try {
@@ -172,9 +185,9 @@ async function escolherTurno(t){
   turno = t;
   mostrarTela('t-leitos');
   const b = document.getElementById('badge-leitos');
-  const mapa = { MANHA:'🌅 MANHÃ', TARDE:'☀ TARDE', NOITE:'🌙 NOITE' };
+  const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[t] || t;
-  b.className = 'badge ' + (t === 'NOITE' ? 'badge-n' : 'badge-d');
+  b.className = 'badge ' + (t === 'NOTURNO' ? 'badge-n' : 'badge-d');
   document.getElementById('badge-user').textContent = usuarioEmail
     ? '👤 ' + usuarioEmail.split('@')[0] + ' · Sair'
     : 'Sair';
@@ -186,10 +199,19 @@ async function renderLeitos(){
   const grid = document.getElementById('leitos-grid');
   grid.innerHTML = '';
   const d = await leitosData();
+
+  // Monta lista de chaves de evolução dos leitos ocupados para leitura paralela
+  const hojeStr = hoje();
+  const chaves = [];
+  for (let i = 1; i <= TOTAL; i++) {
+    const l = d[i] || { ocupado: false };
+    if (l.ocupado) chaves.push(evKey(i, turno, hojeStr));
+  }
+  const evMap = chaves.length ? await dbGetMany(chaves) : {};
+
   for (let i = 1; i <= TOTAL; i++) {
     const l = d[i] || { ocupado:false };
-    // Verifica se já existe evolução deste turno/dia
-    const ev = l.ocupado ? await dbGet(evKey(i, turno, hoje())) : null;
+    const ev = l.ocupado ? evMap[evKey(i, turno, hojeStr)] : null;
 
     const card = document.createElement('div');
     card.className = 'leito-card';
@@ -321,9 +343,9 @@ async function abrirAcomp(leito){
   // Atualiza header
   document.getElementById('acomp-sub').textContent = `Leito ${pad(leito)} · ${doc.pac} · adm ${fmtD(doc.adm)||'—'}`;
   const b = document.getElementById('badge-acomp');
-  const mapa = { MANHA:'🌅 MANHÃ', TARDE:'☀ TARDE', NOITE:'🌙 NOITE' };
+  const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[turno] || turno;
-  b.className = 'badge ' + (turno === 'NOITE' ? 'badge-n' : 'badge-d');
+  b.className = 'badge ' + (turno === 'NOTURNO' ? 'badge-n' : 'badge-d');
 
   _ativarCaixaAltaEm(document.getElementById('t-acomp'));
   hideLoading();
@@ -438,8 +460,8 @@ async function salvarColunaAcomp(){
       toast('✓ Coluna adicionada');
     }
   }
-  // Ordena por data + turno (MANHA → TARDE → NOITE)
-  const ordem = { MANHA:1, TARDE:2, NOITE:3 };
+  // Ordena por data + turno (DIURNO → NOTURNO)
+  const ordem = { DIURNO:1, NOTURNO:2 };
   acompAtual.colunas.sort((a,b) => {
     if (a.data !== b.data) return a.data.localeCompare(b.data);
     return (ordem[a.turno]||9) - (ordem[b.turno]||9);
@@ -798,9 +820,9 @@ async function abrirForm(leito){
   // Atualiza header
   document.getElementById('form-sub').textContent = `Leito ${pad(leito)} · ${_labelTurno(turno)} · ${fmtD(hoje())}`;
   const b = document.getElementById('badge-form');
-  const mapa = { MANHA:'🌅 MANHÃ', TARDE:'☀ TARDE', NOITE:'🌙 NOITE' };
+  const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[turno] || turno;
-  b.className = 'badge ' + (turno === 'NOITE' ? 'badge-n' : 'badge-d');
+  b.className = 'badge ' + (turno === 'NOTURNO' ? 'badge-n' : 'badge-d');
 
   toggleVMI();
   _ativarCaixaAlta();
@@ -808,16 +830,15 @@ async function abrirForm(leito){
 }
 
 function _labelTurno(t){
-  return { MANHA:'Manhã', TARDE:'Tarde', NOITE:'Noite' }[t] || t;
+  return { DIURNO:'Diurno', NOTURNO:'Noturno' }[t] || t;
 }
 
 function _montarAspiracao(){
   const cont = document.getElementById('asp-cg');
   cont.innerHTML = '';
   let horarios = [];
-  if (turno === 'MANHA')      horarios = ['7h','8h','9h','10h','11h','12h'];
-  else if (turno === 'TARDE') horarios = ['13h','14h','15h','16h','17h','18h'];
-  else                         horarios = ['19-21h','21-23h','23-01h','01-03h','03-05h','05-07h'];
+  if (turno === 'DIURNO') horarios = ['07-09h','09-11h','11-13h','13-15h','15-17h','17-19h'];
+  else                     horarios = ['19-21h','21-23h','23-01h','01-03h','03-05h','05-07h'];
   horarios.forEach((h, i) => {
     const label = document.createElement('label');
     label.className = 'asp-c';
@@ -859,23 +880,22 @@ async function _herdarMedicacoes(leito){
 // do dia anterior) e herda os campos que fazem sentido herdar entre turnos.
 // NÃO herda: SSVV, condutas, HFA, observações, aspirações, data.
 async function _herdarCamposAnterior(leito){
-  const turnosOrdem = ['MANHA','TARDE','NOITE'];
+  const turnosOrdem = ['DIURNO','NOTURNO'];
   const hj = hoje();
 
-  // 1) Busca em outros turnos de HOJE
+  // 1) Busca em outro turno de HOJE
   let evAnterior = null;
   for (const t of turnosOrdem) {
     if (t === turno) continue;
     const ev = await dbGet(evKey(leito, t, hj));
     if (ev) { evAnterior = ev; break; }
   }
-  // 2) Se não achou, busca em turnos de ONTEM
+  // 2) Se não achou, busca em turnos de ONTEM (noturno primeiro = mais recente)
   if (!evAnterior) {
     const ontem = new Date();
     ontem.setDate(ontem.getDate() - 1);
     const ontemStr = ontem.getFullYear() + '-' + pad(ontem.getMonth()+1) + '-' + pad(ontem.getDate());
-    // Vai de trás pra frente (noite → tarde → manhã) pra pegar o mais recente
-    for (const t of ['NOITE','TARDE','MANHA']) {
+    for (const t of ['NOTURNO','DIURNO']) {
       const ev = await dbGet(evKey(leito, t, ontemStr));
       if (ev) { evAnterior = ev; break; }
     }
@@ -984,14 +1004,13 @@ function toggleVMI(){
 }
 
 // Caixa alta automática em text/textarea (padrão do sistema)
+// Usa evento "blur" para não interferir com autocorrect/sugestões mobile.
 function _ativarCaixaAlta(){
   document.querySelectorAll('#t-form input[type="text"], #t-form textarea').forEach(el => {
     if (el.dataset.ca === '1') return;
     el.dataset.ca = '1';
-    el.addEventListener('input', () => {
-      const pos = el.selectionStart;
-      const up = el.value.toUpperCase();
-      if (el.value !== up) { el.value = up; el.setSelectionRange(pos, pos); }
+    el.addEventListener('blur', () => {
+      el.value = el.value.toUpperCase();
     });
   });
 }
@@ -999,10 +1018,8 @@ function _ativarCaixaAltaEm(container){
   container.querySelectorAll('input[type="text"], textarea').forEach(el => {
     if (el.dataset.ca === '1') return;
     el.dataset.ca = '1';
-    el.addEventListener('input', () => {
-      const pos = el.selectionStart;
-      const up = el.value.toUpperCase();
-      if (el.value !== up) { el.value = up; el.setSelectionRange(pos, pos); }
+    el.addEventListener('blur', () => {
+      el.value = el.value.toUpperCase();
     });
   });
 }
@@ -1162,9 +1179,9 @@ async function gerarPreview(){
 
   renderPreview(dados);
   const b = document.getElementById('badge-prev');
-  const mapa = { MANHA:'🌅 MANHÃ', TARDE:'☀ TARDE', NOITE:'🌙 NOITE' };
+  const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[turno] || turno;
-  b.className = 'badge ' + (turno === 'NOITE' ? 'badge-n' : 'badge-d');
+  b.className = 'badge ' + (turno === 'NOTURNO' ? 'badge-n' : 'badge-d');
   document.getElementById('prev-sub').textContent = `Leito ${pad(leitoAtual)} · ${_labelTurno(turno)} · ${fmtD(hoje())}`;
   irPreview();
 }
