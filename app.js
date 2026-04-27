@@ -620,8 +620,8 @@ async function enviarAcompanhamentoDrive(){
     const margin = 10;
     const contentW = pageW - margin*2; // 277
 
-    // Divide as colunas em páginas de no máximo 8 colunas por página
-    const COLS_POR_PAG = 8;
+    // Divide as colunas em páginas de no máximo 16 colunas por página
+    const COLS_POR_PAG = 16;
     const total = acompAtual.colunas.length;
     const numPag = Math.max(1, Math.ceil(total / COLS_POR_PAG));
 
