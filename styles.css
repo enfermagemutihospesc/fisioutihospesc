@@ -274,15 +274,15 @@ label{font-size:.72rem;font-weight:600;color:var(--muted);}
 .acomp-ev-row .rm{background:transparent;border:none;color:var(--vermelho);cursor:pointer;padding:0 6px;}
 
 /* Tabela no PDF paisagem */
-.pdf-acomp-area{background:white;padding:14px 20px;font-family:var(--fonte);color:black;}
+.pdf-acomp-area{background:white;padding:10px 12px;font-family:var(--fonte);color:black;}
 .pdf-acomp-area .ph{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid black;padding-bottom:6px;margin-bottom:8px;}
 .pdf-acomp-area .ph h1{font-size:.88rem;text-align:center;flex:1;}
 .pdf-acomp-area .pid{font-size:.68rem;background:#f7f7f7;border:1px solid #ccc;padding:5px 8px;margin-bottom:8px;line-height:1.5;}
 .pdf-acomp-area .pid strong{color:black;}
 .pdf-acomp-area table{border-collapse:collapse;font-size:.62rem;width:100%;margin-bottom:8px;table-layout:fixed;}
-.pdf-acomp-area th,.pdf-acomp-area td{border:1px solid black;padding:2px 4px;}
+.pdf-acomp-area th,.pdf-acomp-area td{border:1px solid black;padding:1px 2px;}
 .pdf-acomp-area th{background:#ddd;text-align:center;font-size:.58rem;}
-.pdf-acomp-area th.rotulo,.pdf-acomp-area td.rotulo{background:#f0f0f0;text-align:left;width:22%;font-weight:600;}
+.pdf-acomp-area th.rotulo,.pdf-acomp-area td.rotulo{background:#f0f0f0;text-align:left;width:16%;font-weight:600;}
 .pdf-acomp-area td{text-align:center;word-wrap:break-word;overflow:hidden;}
 .pdf-acomp-area tr.grupo td{background:#eee;font-weight:700;text-align:left;font-size:.6rem;text-transform:uppercase;}
 .pdf-acomp-area .ev{margin-top:6px;}
