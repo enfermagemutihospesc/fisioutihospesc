@@ -620,8 +620,8 @@ async function enviarAcompanhamentoDrive(){
     const margin = 10;
     const contentW = pageW - margin*2; // 277
 
-    // Divide as colunas em páginas de no máximo 16 colunas por página
-    const COLS_POR_PAG = 16;
+    // Divide as colunas em páginas de no máximo 8 colunas por página
+    const COLS_POR_PAG = 8;
     const total = acompAtual.colunas.length;
     const numPag = Math.max(1, Math.ceil(total / COLS_POR_PAG));
 
@@ -639,7 +639,7 @@ async function enviarAcompanhamentoDrive(){
 
       const canvas = await html2canvas(areaPdf.firstElementChild, {
         scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
-        width: 1400, windowWidth: 1400
+        width: 1100, windowWidth: 1100
       });
 
       // Calcula dimensões para caber na página
@@ -1460,6 +1460,433 @@ async function gerarPDF(){
   }
 
   btn.disabled = false; btn.textContent = '☁ Salvar PDF no Drive';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INDICADORES DE FISIOTERAPIA
+// Mortalidade/permanência: lê uti_admissao_log e uti_alta_log (compartilhado).
+// Desmame/extubação/mobilização: lê fisio_ev_* e fisio_acomp_*.
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _indCategoriaAtiva = 'permanencia';
+let _indCache = null;
+
+function irIndicadores(){
+  mostrarTela('t-indicadores');
+  document.querySelectorAll('.ind-cat-btn').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('.ind-cat-btn').forEach(x => x.classList.remove('ativa'));
+      b.classList.add('ativa');
+      _indCategoriaAtiva = b.dataset.cat;
+      _renderCategoriaInd();
+    };
+  });
+  renderIndicadores();
+  window.scrollTo(0,0);
+}
+
+function _atualizarPeriodoIndicadores(){
+  const sel = gf('ind-periodo');
+  document.getElementById('ind-custom').style.display = sel === 'custom' ? 'flex' : 'none';
+}
+
+function _indPeriodo(){
+  const tipo = gf('ind-periodo');
+  const hj = new Date(); hj.setHours(23,59,59,999);
+  if (tipo === 'all') return { inicio: new Date(2000,0,1), fim: hj, rotulo: 'Todo o histórico' };
+  if (tipo === 'custom') {
+    const de = gf('ind-de'), ate = gf('ind-ate');
+    if (!de || !ate) return null;
+    const [ay,am,ad] = de.split('-').map(Number);
+    const [by,bm,bd] = ate.split('-').map(Number);
+    return {
+      inicio: new Date(ay, am-1, ad, 0,0,0),
+      fim:    new Date(by, bm-1, bd, 23,59,59),
+      rotulo: `${fmtD(de)} até ${fmtD(ate)}`
+    };
+  }
+  const dias = parseInt(tipo);
+  const inicio = new Date();
+  inicio.setDate(inicio.getDate() - dias);
+  inicio.setHours(0,0,0,0);
+  return { inicio, fim: hj, rotulo: `Últimos ${dias} dias` };
+}
+
+// Carrega dados brutos: logs da enfermagem + evoluções/acompanhamentos da fisio
+async function _carregarDadosInd(){
+  showLoading('Carregando indicadores...');
+  try {
+    const fixas = ['uti_admissao_log','uti_alta_log'];
+    const dinamicas = new Set();
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('fisio_ev_') || k.startsWith('fisio_acomp_'))) dinamicas.add(k);
+    }
+    if (!modoOffline && db) {
+      try {
+        const snap = await db.collection('uti').get();
+        snap.forEach(doc => {
+          if (doc.id.startsWith('fisio_ev_') || doc.id.startsWith('fisio_acomp_')) dinamicas.add(doc.id);
+        });
+      } catch(e) { console.warn('_carregarDadosInd:', e); }
+    }
+
+    const todasChaves = [...fixas, ...Array.from(dinamicas)];
+    const dataMap = await dbGetMany(todasChaves);
+
+    const admissoes = dataMap['uti_admissao_log'] || [];
+    const altas     = dataMap['uti_alta_log']     || [];
+    const evolucoes = [], acompanhamentos = [];
+    for (const k of dinamicas) {
+      const v = dataMap[k];
+      if (!v) continue;
+      if (k.startsWith('fisio_ev_'))    evolucoes.push(v);
+      if (k.startsWith('fisio_acomp_')) acompanhamentos.push(v);
+    }
+    _indCache = { admissoes, altas, evolucoes, acompanhamentos };
+  } finally {
+    hideLoading();
+  }
+  return _indCache;
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function _dataLocal(s){
+  if (!s) return null;
+  const [y,m,d] = s.split('-').map(Number);
+  return new Date(y, m-1, d, 12, 0, 0);
+}
+function _diasEntre(a, b){
+  if (!a || !b) return null;
+  const da = _dataLocal(a), dbt = _dataLocal(b);
+  if (!da || !dbt) return null;
+  return Math.max(0, Math.round((dbt - da) / 86400000));
+}
+function _dentroPeriodo(dataStr, periodo){
+  if (!dataStr) return false;
+  const d = _dataLocal(dataStr);
+  if (!d) return false;
+  return d >= periodo.inicio && d <= periodo.fim;
+}
+function _pct(num, den, casas=1){
+  if (!den || den === 0) return '0%';
+  return (num*100/den).toFixed(casas) + '%';
+}
+
+function _cardInd(label, valor, sub='', cls='', fichaId=''){
+  const btn = fichaId
+    ? `<button class="ind-info-btn" onclick="abrirFichaIndicador('${fichaId}')" title="Sobre este indicador">ℹ️</button>`
+    : '';
+  return `<div class="ind-card ${cls}">
+    ${btn}
+    <div class="ind-card-l">${label}</div>
+    <div class="ind-card-v">${valor}</div>
+    ${sub ? `<div class="ind-card-s">${sub}</div>` : ''}
+  </div>`;
+}
+
+function _rankingBarras(titulo, itens, max=null, fichaId=''){
+  const btn = fichaId
+    ? `<button class="ind-info-btn ind-grupo-info" onclick="abrirFichaIndicador('${fichaId}')" title="Sobre este indicador">ℹ️</button>`
+    : '';
+  if (!itens.length) {
+    return `<div class="ind-grupo"><div class="ind-grupo-t">${titulo}</div>${btn}<div class="ind-vazio">Sem dados no período.</div></div>`;
+  }
+  const top = max ? itens.slice(0, max) : itens;
+  const maior = Math.max(...top.map(i => i.valor));
+  let h = `<div class="ind-grupo"><div class="ind-grupo-t">${titulo}</div>${btn}<div class="ind-bar-wrap">`;
+  top.forEach(i => {
+    const pct = maior > 0 ? (i.valor*100/maior) : 0;
+    h += `<div class="ind-bar">
+      <span class="ind-bar-l" title="${esc(i.label)}">${esc(i.label)}</span>
+      <div class="ind-bar-bg"><div class="ind-bar-fill" style="width:${pct}%;"></div></div>
+      <span class="ind-bar-n">${i.valor}</span>
+    </div>`;
+  });
+  h += `</div></div>`;
+  return h;
+}
+
+// ── FICHAS DOS INDICADORES (formato simplificado) ────────────────────────────
+const FICHAS_FISIO = {
+  perm_total_altas: {
+    nome: 'Total de altas',
+    conceituacao: 'Número de pacientes que saíram da UTI no período (alta para enfermaria, óbito ou transferência).',
+    formula: 'Contagem de registros em uti_alta_log com dataAlta dentro do período.'
+  },
+  perm_mortalidade: {
+    nome: 'Taxa de mortalidade intra-UTI',
+    conceituacao: 'Proporção de pacientes que foram a óbito durante a internação na UTI em relação ao total de pacientes que saíram.',
+    formula: '(óbitos / total de altas) × 100',
+    importancia: 'Indicador-chave de qualidade assistencial e gravidade dos pacientes admitidos.'
+  },
+  perm_media: {
+    nome: 'Permanência média',
+    conceituacao: 'Tempo médio de internação na UTI dos pacientes que receberam alta no período.',
+    formula: 'Σ (dataAlta − admUTI) / total de altas, em dias.'
+  },
+  perm_pacdia_vmi: {
+    nome: 'Pacientes-dia em VMI',
+    conceituacao: 'Número de evoluções de fisioterapia no período em que o suporte ventilatório era VMI. Cada evolução corresponde a um turno (12h), portanto 2 evoluções = 1 paciente-dia.',
+    formula: 'Σ evoluções com sv="VMI" no período ÷ 2.'
+  },
+  desm_taxa: {
+    nome: 'Taxa de desmame ventilatório',
+    conceituacao: 'Proporção de pacientes que receberam alta da UTI após terem estado em VMI e que saíram extubados (não em VMI). Corresponde à fração de pacientes que conseguiram desmamar do ventilador.',
+    formula: '(pacientes com VMI em algum turno e sem VMI no último turno antes da alta) / (pacientes que tiveram VMI em algum momento)',
+    importancia: 'Indicador-chave de eficácia do desmame. Inclui sucesso de desmame e extubação. Não inclui pacientes que foram a óbito intubados.'
+  },
+  desm_sucesso_ext: {
+    nome: 'Taxa de sucesso de extubação',
+    conceituacao: 'Proporção de extubações sem necessidade de re-intubação em até 48h.',
+    formula: '(extubações sem RE-IOT em ≤48h) / (total de extubações com data registrada)',
+    importancia: 'Padrão clínico: re-IOT em ≤48h define falha de extubação (consenso AMIB/ATS).'
+  },
+  desm_falha_ext: {
+    nome: 'Taxa de falha de extubação',
+    conceituacao: 'Proporção de extubações que necessitaram de re-intubação em até 48h.',
+    formula: '(extubações com RE-IOT em ≤48h) / (total de extubações)',
+    importancia: 'Falha de extubação está associada a maior mortalidade, maior tempo de VMI e maior permanência.'
+  },
+  desm_tre: {
+    nome: 'Taxa de sucesso do TRE',
+    conceituacao: 'Proporção de testes de respiração espontânea (TRE) que tiveram resultado "Sucesso" no acompanhamento diário.',
+    formula: '(colunas com tre="Sucesso") / (colunas com tre preenchido)',
+    importancia: 'TRE é a etapa-chave do processo de desmame ventilatório.'
+  },
+  desm_tempo_vmi: {
+    nome: 'Tempo médio em VMI até extubação',
+    conceituacao: 'Média dos dias de TOT registrados nas evoluções no momento da extubação (data EXTB preenchida).',
+    formula: 'Σ dtot nas evoluções com EXTB no período / nº de extubações.'
+  },
+  mob_cobertura: {
+    nome: 'Cobertura fisioterapêutica',
+    conceituacao: 'Proporção de turnos com paciente em leito que receberam evolução de fisioterapia no período.',
+    formula: '(turnos com fisio_ev) / (turnos com paciente ocupando leito)',
+    importancia: 'Indicador operacional de adesão da equipe ao protocolo de evolução por turno.'
+  },
+  mob_precoce: {
+    nome: 'Mobilização precoce',
+    conceituacao: 'Proporção de evoluções com Johns Hopkins ≥ 3 (paciente sentado à beira do leito ou mais ativo).',
+    formula: '(evoluções com jh ≥ 3) / (evoluções com jh preenchido)',
+    importancia: 'Mobilização precoce reduz fraqueza adquirida na UTI, delírio e tempo de VMI.'
+  },
+  mob_jh_dist: {
+    nome: 'Distribuição Johns Hopkins',
+    conceituacao: 'Frequência de cada nível (1–8) da escala Johns Hopkins de mobilidade nas evoluções do período.',
+    formula: 'Contagem de evoluções por nível jh.'
+  }
+};
+
+function abrirFichaIndicador(id){
+  const f = FICHAS_FISIO[id];
+  if (!f) return;
+  document.getElementById('ficha-titulo').textContent = f.nome;
+  let h = `<div style="font-size:.82rem;line-height:1.5;">
+    <p><strong>Conceituação:</strong> ${f.conceituacao}</p>
+    ${f.formula ? `<p><strong>Fórmula:</strong> ${f.formula}</p>` : ''}
+    ${f.importancia ? `<p><strong>Importância:</strong> ${f.importancia}</p>` : ''}
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+    <button class="btn btn-sec btn-sm" onclick="fecharFichaIndicador()">Fechar</button>
+  </div>`;
+  document.getElementById('ficha-body').innerHTML = h;
+  document.getElementById('modal-ficha').classList.add('show');
+}
+function fecharFichaIndicador(){
+  document.getElementById('modal-ficha').classList.remove('show');
+}
+
+// ── RENDERIZAÇÃO ─────────────────────────────────────────────────────────────
+async function renderIndicadores(){
+  const periodo = _indPeriodo();
+  if (!periodo) { toast('Informe o período personalizado', true); return; }
+  if (!_indCache) await _carregarDadosInd();
+  _renderCategoriaInd();
+}
+
+function _renderCategoriaInd(){
+  const periodo = _indPeriodo();
+  if (!periodo || !_indCache) return;
+  const fn = {
+    permanencia: _indPermanencia,
+    desmame:     _indDesmame,
+    mobilizacao: _indMobilizacao
+  }[_indCategoriaAtiva];
+  if (!fn) return;
+  const cont = document.getElementById('ind-conteudo');
+  cont.innerHTML = `<div style="font-size:.78rem;color:var(--muted);margin-bottom:8px;">Período: <strong>${periodo.rotulo}</strong></div>` + fn(periodo);
+}
+
+// ── 1. MORTALIDADE & PERMANÊNCIA ─────────────────────────────────────────────
+function _indPermanencia(periodo){
+  const { admissoes, altas, evolucoes } = _indCache;
+  const altasPer = altas.filter(a => _dentroPeriodo(a.dataAlta, periodo));
+  const total = altasPer.length;
+
+  // Mortalidade
+  const obitos = altasPer.filter(a => a.tipoAlta === 'Óbito').length;
+
+  // Permanência média (altas do período)
+  const permanencias = altasPer
+    .map(a => _diasEntre(a.admUTI, a.dataAlta))
+    .filter(d => d !== null);
+  const permMedia = permanencias.length
+    ? (permanencias.reduce((s,x) => s+x, 0) / permanencias.length).toFixed(1)
+    : '–';
+
+  // Pacientes-dia em VMI: cada evolução = 12h; 2 evoluções = 1 dia
+  const evVMI = evolucoes.filter(e => _dentroPeriodo(e.data, periodo) && e.sv === 'VMI').length;
+  const pacDiaVMI = (evVMI / 2).toFixed(1);
+
+  let h = '<div class="ind-grid">';
+  h += _cardInd('Total de altas', total, 'no período', '', 'perm_total_altas');
+  h += _cardInd('Taxa de mortalidade', _pct(obitos, total),
+    `${obitos} óbito${obitos===1?'':'s'}`, obitos > 0 ? 'vermelho' : 'verde', 'perm_mortalidade');
+  h += _cardInd('Permanência média',
+    permMedia !== '–' ? permMedia + ' dias' : '–',
+    `${permanencias.length} altas`, '', 'perm_media');
+  h += _cardInd('Pacientes-dia em VMI', pacDiaVMI,
+    `${evVMI} evoluções`, 'roxo', 'perm_pacdia_vmi');
+  h += '</div>';
+  return h;
+}
+
+// ── 2. DESMAME & EXTUBAÇÃO ───────────────────────────────────────────────────
+function _indDesmame(periodo){
+  const { admissoes, altas, evolucoes, acompanhamentos } = _indCache;
+
+  // Agrupa evoluções por (leito, paciente) baseado na admissão para identificar
+  // quem teve VMI em algum momento e qual o último estado antes da alta
+  const altasPer = altas.filter(a => _dentroPeriodo(a.dataAlta, periodo) && a.tipoAlta !== 'Óbito');
+
+  let teveVMI = 0, desmamou = 0;
+  altasPer.forEach(a => {
+    // Evoluções desse paciente: mesmo leito + entre admUTI e dataAlta
+    const admStr = a.admUTI || '';
+    const altaStr = a.dataAlta || '';
+    if (!admStr || !altaStr) return;
+    const evs = evolucoes.filter(e =>
+      e.leito === a.leito &&
+      e.data && e.data >= admStr && e.data <= altaStr
+    ).sort((x,y) => (x.data + x.turno).localeCompare(y.data + y.turno));
+    if (!evs.length) return;
+    const houveVMI = evs.some(e => e.sv === 'VMI');
+    if (!houveVMI) return;
+    teveVMI++;
+    // Último estado antes da alta
+    const ultimo = evs[evs.length - 1];
+    if (ultimo.sv && ultimo.sv !== 'VMI') desmamou++;
+  });
+
+  // Sucesso/falha de extubação: olha cada evolução com EXTB preenchido
+  // Falha = re-IOT em ≤48h após EXTB
+  const extubacoes = [];
+  evolucoes.forEach(e => {
+    if (!e.extb || !_dentroPeriodo(e.extb, periodo)) return;
+    // Evita duplicata: cada par (leito, extb) conta uma vez
+    const key = `${e.leito}_${e.extb}`;
+    if (extubacoes.find(x => x.key === key)) return;
+    extubacoes.push({ key, leito: e.leito, extb: e.extb, reiot: e.reiot || null });
+  });
+  let falhas = 0;
+  extubacoes.forEach(x => {
+    if (x.reiot) {
+      const d = _diasEntre(x.extb, x.reiot);
+      if (d !== null && d <= 2) falhas++; // ≤48h ≈ 2 dias corridos
+    }
+  });
+  const totExt = extubacoes.length;
+  const sucessos = totExt - falhas;
+
+  // TRE no acompanhamento: percorre colunas
+  let treSucesso = 0, treTotal = 0;
+  acompanhamentos.forEach(ac => {
+    (ac.colunas || []).forEach(c => {
+      if (!_dentroPeriodo(c.data, periodo)) return;
+      if (!c.tre) return;
+      treTotal++;
+      if (c.tre === 'Sucesso') treSucesso++;
+    });
+  });
+
+  // Tempo médio em VMI até extubação: dtot nas evoluções com EXTB no período
+  const dtotsExt = [];
+  evolucoes.forEach(e => {
+    if (!e.extb || !_dentroPeriodo(e.extb, periodo)) return;
+    const d = parseInt(e.dtot);
+    if (!isNaN(d) && d > 0) dtotsExt.push(d);
+  });
+  const tempoMedioVMI = dtotsExt.length
+    ? (dtotsExt.reduce((s,x) => s+x, 0) / dtotsExt.length).toFixed(1)
+    : '–';
+
+  let h = '<div class="ind-grid">';
+  h += _cardInd('Taxa de desmame', _pct(desmamou, teveVMI),
+    `${desmamou}/${teveVMI} pacientes`, teveVMI > 0 ? 'verde' : '', 'desm_taxa');
+  h += _cardInd('Sucesso de extubação', _pct(sucessos, totExt),
+    `${sucessos}/${totExt} extubações`, sucessos === totExt && totExt > 0 ? 'verde' : '', 'desm_sucesso_ext');
+  h += _cardInd('Falha de extubação', _pct(falhas, totExt),
+    `${falhas} re-IOT em ≤48h`, falhas > 0 ? 'vermelho' : 'verde', 'desm_falha_ext');
+  h += _cardInd('Sucesso do TRE', _pct(treSucesso, treTotal),
+    `${treSucesso}/${treTotal} testes`, '', 'desm_tre');
+  h += _cardInd('Tempo médio em VMI',
+    tempoMedioVMI !== '–' ? tempoMedioVMI + ' dias' : '–',
+    `${dtotsExt.length} extubações`, 'roxo', 'desm_tempo_vmi');
+  h += '</div>';
+  return h;
+}
+
+// ── 3. MOBILIZAÇÃO & COBERTURA ───────────────────────────────────────────────
+function _indMobilizacao(periodo){
+  const { admissoes, altas, evolucoes } = _indCache;
+
+  // Cobertura: turnos com fisio_ev no período / turnos esperados
+  // Turnos esperados = soma dos pacientes-dia × 2 (DIURNO + NOTURNO) no período
+  let turnosEsperados = 0;
+  admissoes.forEach(adm => {
+    if (!adm.admUTI) return;
+    const inicio = _dataLocal(adm.admUTI);
+    if (!inicio) return;
+    const alta = altas.find(a =>
+      a.leito === adm.leito &&
+      a.paciente === adm.paciente &&
+      _dataLocal(a.dataAlta) >= inicio
+    );
+    const fimInt = alta ? _dataLocal(alta.dataAlta) : new Date();
+    const s = inicio > periodo.inicio ? inicio : periodo.inicio;
+    const e = fimInt < periodo.fim ? fimInt : periodo.fim;
+    if (e >= s) turnosEsperados += (Math.floor((e-s)/86400000) + 1) * 2;
+  });
+  const turnosCobertos = evolucoes.filter(e => _dentroPeriodo(e.data, periodo)).length;
+
+  // Mobilização precoce: jh ≥ 3
+  const evComJh = evolucoes.filter(e => _dentroPeriodo(e.data, periodo) && e.jh && !isNaN(parseInt(e.jh)));
+  const mobPrecoce = evComJh.filter(e => parseInt(e.jh) >= 3).length;
+
+  // Distribuição JH
+  const distJh = {};
+  for (let i = 1; i <= 8; i++) distJh[i] = 0;
+  evComJh.forEach(e => {
+    const n = parseInt(e.jh);
+    if (n >= 1 && n <= 8) distJh[n]++;
+  });
+  const distList = Object.entries(distJh)
+    .filter(([_, v]) => v > 0)
+    .map(([k, v]) => ({ label: `Nível ${k}`, valor: v }));
+
+  let h = '<div class="ind-grid">';
+  h += _cardInd('Cobertura fisioterapêutica', _pct(turnosCobertos, turnosEsperados),
+    `${turnosCobertos}/${turnosEsperados} turnos`, '', 'mob_cobertura');
+  h += _cardInd('Mobilização precoce (JH≥3)', _pct(mobPrecoce, evComJh.length),
+    `${mobPrecoce}/${evComJh.length} evoluções`, mobPrecoce > 0 ? 'verde' : '', 'mob_precoce');
+  h += _cardInd('Total de evoluções', evolucoes.filter(e => _dentroPeriodo(e.data, periodo)).length,
+    'no período', 'roxo');
+  h += '</div>';
+
+  h += _rankingBarras('Distribuição Johns Hopkins (1–8)', distList, null, 'mob_jh_dist');
+  return h;
 }
 
 // ── INICIALIZAÇÃO ────────────────────────────────────────────────────────────
