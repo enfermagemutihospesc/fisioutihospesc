@@ -1188,6 +1188,11 @@ async function gerarPreview(){
 
 function renderPreview(d){
   const area = document.getElementById('preview-area');
+  renderPreviewEm(area, d);
+}
+
+// Versão genérica: renderiza em qualquer container (usada pelo lote)
+function renderPreviewEm(area, d){
   const ssvv = d.ssvv || {};
   const vmi  = d.vmi  || {};
   const med  = d.med  || {};
@@ -1350,6 +1355,187 @@ function renderPreview(d){
       Fisioterapeuta: ${esc(d.autor)||'—'} · ${new Date().toLocaleString('pt-BR')}
     </div>
   `;
+}
+
+// ── IMPRIMIR TODAS AS EVOLUÇÕES DO TURNO ────────────────────────────────────
+async function imprimirTurnoCompleto(){
+  const leitos = await leitosData();
+  const ocupados = Object.entries(leitos)
+    .filter(([,v]) => v.ocupado)
+    .sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
+  if (!ocupados.length) { toast('Nenhum leito ocupado.'); return; }
+
+  const hj = hoje();
+  const comEvolucao = [];
+  for (const [k, pac] of ocupados) {
+    const leito = parseInt(k);
+    const ev = await dbGet(evKey(leito, turno, hj));
+    if (ev) comEvolucao.push({ leito, pac, ev });
+  }
+  if (!comEvolucao.length) { toast('Nenhuma evolução salva neste turno.', true); return; }
+
+  const total = comEvolucao.length;
+  if (!confirm(`Imprimir ${total} evolução${total>1?'ões':''} do turno ${_labelTurno(turno)}?\n\nUma janela única será aberta. Use Ctrl+P ou aguarde o diálogo automático.`)) return;
+
+  showLoading('Renderizando evoluções...');
+
+  const areaTemp = document.createElement('div');
+  areaTemp.style.cssText = 'position:fixed;top:0;left:-9999px;width:780px;background:white;z-index:-1;';
+  document.body.appendChild(areaTemp);
+
+  const blocos = [];
+  for (const item of comEvolucao) {
+    try {
+      renderPreviewEm(areaTemp, item.ev);
+      await new Promise(r => setTimeout(r, 50));
+      blocos.push(areaTemp.innerHTML);
+    } catch(e) { console.warn('Erro renderizando leito ' + item.leito + ':', e); }
+  }
+  document.body.removeChild(areaTemp);
+
+  let cssFull = '';
+  for (const ss of document.styleSheets) {
+    try { cssFull += Array.from(ss.cssRules).map(r => r.cssText).join('\n'); } catch(e) {}
+  }
+
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) {
+    hideLoading();
+    toast('Bloqueador de pop-up impediu abrir janela. Permita pop-ups e tente novamente.', true);
+    return;
+  }
+  const dataBR = hj.split('-').reverse().join('/');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Evoluções ${_labelTurno(turno)} – ${dataBR}</title>
+    <style>${cssFull}
+      body{background:white;padding:0;margin:0;}
+      .pg{page-break-after:always;padding:20px;}
+      .pg:last-child{page-break-after:auto;}
+      @media print{.no-print{display:none!important;}}
+      .no-print{background:var(--roxo,#5b2c6f);color:white;padding:10px;text-align:center;position:sticky;top:0;z-index:99;}
+      .no-print button{background:white;color:#5b2c6f;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;margin-left:10px;}
+    </style>
+  </head><body>
+    <div class="no-print">
+      ${total} evolução${total>1?'ões':''} · ${_labelTurno(turno)} · ${dataBR}
+      <button onclick="window.print()">🖨 Imprimir tudo</button>
+      <button onclick="window.close()">Fechar</button>
+    </div>
+    ${blocos.map(b => `<div class="pg">${b}</div>`).join('')}
+    <script>setTimeout(()=>window.print(),800);<\/script>
+  </body></html>`);
+  w.document.close();
+  hideLoading();
+  toast(`✓ ${total} evoluções abertas para impressão`);
+}
+
+// ── ENVIAR TODAS AS EVOLUÇÕES DO TURNO AO DRIVE ──────────────────────────────
+async function enviarTurnoDrive(){
+  const leitos = await leitosData();
+  const ocupados = Object.entries(leitos)
+    .filter(([,v]) => v.ocupado)
+    .sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
+  if (!ocupados.length) { toast('Nenhum leito ocupado.'); return; }
+
+  const hj = hoje();
+  const comEvolucao = [];
+  for (const [k, pac] of ocupados) {
+    const leito = parseInt(k);
+    const ev = await dbGet(evKey(leito, turno, hj));
+    if (ev) comEvolucao.push({ leito, pac, ev });
+  }
+  if (!comEvolucao.length) { toast('Nenhuma evolução salva neste turno.', true); return; }
+
+  const total = comEvolucao.length;
+  if (!confirm(`Enviar ${total} evolução${total>1?'ões':''} do turno ${_labelTurno(turno)} ao Drive?\n\nCada evolução será enviada como PDF individual na pasta do paciente.`)) return;
+
+  showLoading(`Gerando PDFs (0/${total})...`);
+
+  const { jsPDF } = window.jspdf;
+  const LARGURA_FIXA = 780;
+  const areaTemp = document.createElement('div');
+  areaTemp.style.cssText = `position:fixed;top:0;left:-9999px;width:${LARGURA_FIXA}px;background:white;z-index:-1;`;
+  document.body.appendChild(areaTemp);
+
+  let ok = 0, erros = 0;
+  const [ano, mes, dia] = hj.split('-');
+  const dataBR = dia + mes + ano;
+
+  for (let i = 0; i < comEvolucao.length; i++) {
+    const { leito, pac, ev } = comEvolucao[i];
+    document.getElementById('loading-msg').textContent = `Gerando PDFs (${i+1}/${total})...`;
+    try {
+      renderPreviewEm(areaTemp, ev);
+      await new Promise(r => setTimeout(r, 80));
+
+      const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const contentW = pageW - margin*2;
+      const contentH = pageH - margin*2;
+
+      const canvas = await html2canvas(areaTemp, {
+        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+        width: LARGURA_FIXA, windowWidth: LARGURA_FIXA
+      });
+
+      const mmTotal = (canvas.height / canvas.width) * contentW;
+      let larguraUso = contentW;
+      const PAGINAS_ALVO = 2;
+      if (mmTotal > PAGINAS_ALVO * contentH) {
+        larguraUso = contentW * ((PAGINAS_ALVO * contentH) / mmTotal);
+      }
+      const pxPorPagina = Math.floor((contentH / contentW) * canvas.width * (contentW / larguraUso));
+      const offsetX = margin + (contentW - larguraUso) / 2;
+
+      const addFatia = (yStart, yEnd) => {
+        const h = yEnd - yStart;
+        const sc = document.createElement('canvas');
+        sc.width = canvas.width; sc.height = h;
+        const ctx = sc.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0,0,sc.width,h);
+        ctx.drawImage(canvas, 0,yStart,canvas.width,h, 0,0,canvas.width,h);
+        const mmH = (h / canvas.width) * larguraUso;
+        pdf.addImage(sc.toDataURL('image/jpeg',.92),'JPEG',offsetX,margin,larguraUso,mmH);
+      };
+
+      if (canvas.height <= pxPorPagina) {
+        addFatia(0, canvas.height);
+      } else {
+        let yStart = 0, pag = 0;
+        while (yStart < canvas.height && pag < PAGINAS_ALVO) {
+          if (pag > 0) pdf.addPage();
+          const yEnd = Math.min(yStart + pxPorPagina, canvas.height);
+          addFatia(yStart, yEnd);
+          yStart = yEnd; pag++;
+        }
+      }
+
+      const nomePac = (ev.pac || '').trim();
+      const primNome = (nomePac.split(' ')[0] || 'Pac').toUpperCase();
+      const pastaNome = nomePac
+        ? `Leito ${pad(leito)} - ${nomePac}`
+        : `Leito ${pad(leito)} - Sem identificacao`;
+      const titulo = `EvolucaoFisio_L${pad(leito)}_${turno}_${dataBR}_${primNome}`;
+
+      const base64 = pdf.output('datauristring').split(',')[1];
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ titulo, arquivoBase64: base64, pasta: pastaNome, pastaRaizId: PASTA_EVOLUCAO_ID })
+      });
+      ok++;
+    } catch(e) {
+      console.error('Erro leito ' + leito + ':', e);
+      erros++;
+    }
+  }
+
+  document.body.removeChild(areaTemp);
+  hideLoading();
+  if (erros === 0) toast(`✓ ${ok} PDF${ok>1?'s':''} enviado${ok>1?'s':''} ao Drive`);
+  else toast(`${ok} enviados, ${erros} com erro`, erros > 0);
 }
 
 // ── GERAR PDF E ENVIAR AO DRIVE ──────────────────────────────────────────────
