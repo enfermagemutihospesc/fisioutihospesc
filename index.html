@@ -519,8 +519,39 @@ const TOTAL = 10; // leitos
       </div>
     </div>
 
+    <!-- GRÁFICOS DE EVOLUÇÃO -->
+    <div class="secao" id="secao-graficos" style="display:none;">
+      <div class="secao-t" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>📈 Gráficos de Evolução</span>
+        <button class="btn btn-sec btn-sm" onclick="fecharGraficos()">✕ Fechar</button>
+      </div>
+      <div class="secao-c">
+        <!-- Seletor de grupo -->
+        <div class="graf-grupos" id="graf-grupos">
+          <button class="graf-grupo-btn ativo" data-grupo="gasometria" onclick="selecionarGrupoGraf(this)">🩸 Gasometria</button>
+          <button class="graf-grupo-btn" data-grupo="ventilacao" onclick="selecionarGrupoGraf(this)">💨 Ventilação</button>
+          <button class="graf-grupo-btn" data-grupo="laboratorio" onclick="selecionarGrupoGraf(this)">🧪 Laboratório</button>
+          <button class="graf-grupo-btn" data-grupo="mobilizacao" onclick="selecionarGrupoGraf(this)">🏃 Mobilização</button>
+        </div>
+        <!-- Checkboxes de parâmetros (máx 4) -->
+        <div class="graf-params" id="graf-params"></div>
+        <div id="graf-aviso" style="font-size:.7rem;color:var(--laranja);display:none;">Máximo de 4 parâmetros simultâneos.</div>
+        <!-- Canvas -->
+        <div class="graf-container">
+          <canvas id="graf-canvas"></canvas>
+          <div class="graf-tooltip" id="graf-tooltip" style="display:none;"></div>
+        </div>
+        <!-- Legenda -->
+        <div class="graf-legenda" id="graf-legenda"></div>
+        <p style="font-size:.68rem;color:var(--muted);text-align:center;margin-top:4px;">
+          Valores normalizados 0–100% (escala individual por parâmetro). Passe o mouse sobre o gráfico para ver os valores reais.
+        </p>
+      </div>
+    </div>
+
     <div class="btn-row">
       <button class="btn btn-sec" onclick="irLeitos()">← Leitos</button>
+      <button class="btn btn-sec" onclick="abrirGraficos()">📈 Gráficos</button>
       <button class="btn btn-pdf" onclick="enviarAcompanhamentoDrive()">☁ Enviar PDF ao Drive</button>
     </div>
     <p id="acomp-status" style="font-size:.72rem;color:var(--muted);text-align:right;"></p>
