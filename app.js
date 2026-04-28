@@ -556,9 +556,11 @@ function _renderTabelaAcomp(){
   cols.forEach(c => { h += `<td>${esc(c.prof)||'—'}</td>`; });
   h += '</tr></tbody></table>';
   wrap.innerHTML = h;
+  // Atualiza gráfico se estiver visível
+  if (document.getElementById('secao-graficos').style.display !== 'none') {
+    _renderGrafico();
+  }
 }
-
-// ── EVENTOS LIVRES ───────────────────────────────────────────────────────────
 function _renderEventosAcomp(){
   const cont = document.getElementById('acomp-eventos');
   if (!acompAtual || !acompAtual.eventos || !acompAtual.eventos.length) {
@@ -2073,6 +2075,364 @@ function _indMobilizacao(periodo){
 
   h += _rankingBarras('Distribuição Johns Hopkins (1–8)', distList, null, 'mob_jh_dist');
   return h;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GRÁFICOS DE EVOLUÇÃO DO ACOMPANHAMENTO DIÁRIO
+// Normalização 0–100% por parâmetro. Canvas HTML5 nativo. Máx 4 séries.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const GRAF_CORES = ['#7d3c98','#1a6b9a','#1a8a4a','#c0392b'];
+
+const GRAF_GRUPOS = {
+  gasometria: [
+    { key:'ph',      label:'pH',           unidade:''      },
+    { key:'relacao', label:'P/F (PaO₂/FiO₂)', unidade:''   },
+    { key:'paco2',   label:'PaCO₂',        unidade:'mmHg'  },
+    { key:'pao2',    label:'PaO₂',         unidade:'mmHg'  },
+    { key:'hco3',    label:'HCO₃',         unidade:'mEq/L' },
+    { key:'be',      label:'BE',           unidade:'mEq/L' },
+  ],
+  ventilacao: [
+    { key:'fio2',  label:'FiO₂',   unidade:'%'    },
+    { key:'peep',  label:'PEEP',   unidade:'cmH₂O'},
+    { key:'pcps',  label:'PC/PSV', unidade:'cmH₂O'},
+    { key:'vc',    label:'VC',     unidade:'mL'   },
+    { key:'vm',    label:'VM',     unidade:'L/min'},
+    { key:'dtot',  label:'Dias TOT/TQT', unidade:'dias'},
+  ],
+  laboratorio: [
+    { key:'leuc', label:'Leucometria',    unidade:'/mm³' },
+    { key:'pcr',  label:'PCR',           unidade:'mg/L' },
+    { key:'plaq', label:'Plaquetas',     unidade:'/mm³' },
+    { key:'hbht', label:'Hb/Ht',         unidade:''     },
+    { key:'urcr', label:'Ureia/Creatinina', unidade:'' },
+  ],
+  mobilizacao: [
+    { key:'jh',  label:'Johns Hopkins', unidade:'(1-8)' },
+    { key:'inc', label:'Inclinação',    unidade:'°'     },
+    { key:'cuff',label:'Pressão Cuff',  unidade:'cmH₂O'},
+  ],
+};
+
+let _grafGrupoAtivo = 'gasometria';
+let _grafSelecionados = []; // array de { key, label, unidade }
+let _grafCanvas = null;
+let _grafCtx = null;
+let _grafDados = null; // { colunas, series }
+let _grafAnimFrame = null;
+
+function abrirGraficos(){
+  const secao = document.getElementById('secao-graficos');
+  secao.style.display = '';
+  secao.scrollIntoView({ behavior:'smooth', block:'start' });
+  _grafGrupoAtivo = 'gasometria';
+  _grafSelecionados = [];
+  _grafCanvas = document.getElementById('graf-canvas');
+  _grafCtx = _grafCanvas.getContext('2d');
+  _renderParamsGraf();
+  // Pré-seleciona os 3 primeiros do grupo
+  const params = GRAF_GRUPOS[_grafGrupoAtivo];
+  params.slice(0, 3).forEach(p => _toggleParamGraf(p));
+}
+
+function fecharGraficos(){
+  document.getElementById('secao-graficos').style.display = 'none';
+}
+
+function selecionarGrupoGraf(btn){
+  document.querySelectorAll('.graf-grupo-btn').forEach(b => b.classList.remove('ativo'));
+  btn.classList.add('ativo');
+  _grafGrupoAtivo = btn.dataset.grupo;
+  _grafSelecionados = [];
+  _renderParamsGraf();
+  const params = GRAF_GRUPOS[_grafGrupoAtivo];
+  params.slice(0, 3).forEach(p => _toggleParamGraf(p));
+}
+
+function _renderParamsGraf(){
+  const cont = document.getElementById('graf-params');
+  const params = GRAF_GRUPOS[_grafGrupoAtivo];
+  cont.innerHTML = params.map(p => {
+    const idx = _grafSelecionados.findIndex(s => s.key === p.key);
+    const sel = idx >= 0;
+    const cor = sel ? GRAF_CORES[idx] : '#ccc';
+    return `<label class="graf-param-label${sel?' selecionado':''}" onclick="_toggleParamGrafByKey('${p.key}')">
+      <span class="graf-param-cor" style="background:${cor};"></span>
+      ${p.label}${p.unidade?' ('+p.unidade+')':''}
+    </label>`;
+  }).join('');
+  document.getElementById('graf-aviso').style.display = 'none';
+}
+
+function _toggleParamGrafByKey(key){
+  const grupos = GRAF_GRUPOS[_grafGrupoAtivo];
+  const param = grupos.find(p => p.key === key);
+  if (param) _toggleParamGraf(param);
+}
+
+function _toggleParamGraf(param){
+  const idx = _grafSelecionados.findIndex(s => s.key === param.key);
+  if (idx >= 0) {
+    _grafSelecionados.splice(idx, 1);
+  } else {
+    if (_grafSelecionados.length >= 4) {
+      document.getElementById('graf-aviso').style.display = '';
+      return;
+    }
+    _grafSelecionados.push(param);
+  }
+  document.getElementById('graf-aviso').style.display = 'none';
+  _renderParamsGraf();
+  _renderGrafico();
+}
+
+// Converte string numérica com possível barra (ex: "14/42") → número
+function _toNum(v){
+  if (v === null || v === undefined || v === '') return null;
+  const s = String(v).replace(',','.');
+  // "14/42" → pega primeiro valor
+  const partes = s.split('/');
+  const n = parseFloat(partes[0]);
+  return isNaN(n) ? null : n;
+}
+
+function _renderGrafico(){
+  if (!acompAtual || !_grafCanvas) return;
+  const colunas = (acompAtual.colunas || []).slice().sort((a,b) => {
+    const ka = (a.data||'') + (a.turno||'');
+    const kb = (b.data||'') + (b.turno||'');
+    return ka.localeCompare(kb);
+  });
+  if (!colunas.length) {
+    _desenharVazio('Nenhuma coluna de dados registrada.');
+    return;
+  }
+  if (!_grafSelecionados.length) {
+    _desenharVazio('Selecione ao menos um parâmetro.');
+    return;
+  }
+
+  // Monta séries
+  const series = _grafSelecionados.map((param, ci) => {
+    const valores = colunas.map(c => _toNum(c[param.key]));
+    const validos = valores.filter(v => v !== null);
+    const min = validos.length ? Math.min(...validos) : 0;
+    const max = validos.length ? Math.max(...validos) : 1;
+    const amplitude = max - min || 1;
+    const norm = valores.map(v => v === null ? null : (v - min) / amplitude);
+    return { param, valores, min, max, norm, cor: GRAF_CORES[ci] };
+  });
+
+  _grafDados = { colunas, series };
+  _desenharGrafico(colunas, series);
+  _renderLegenda(series);
+  _ativarTooltip(colunas, series);
+}
+
+function _labelColuna(c){
+  const d = (c.data||'').split('-');
+  const data = d.length===3 ? `${d[2]}/${d[1]}` : c.data;
+  const t = c.turno === 'DIURNO' ? '☀' : '🌙';
+  return `${data} ${t}`;
+}
+
+function _desenharVazio(msg){
+  const canvas = _grafCanvas;
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+  canvas.height = 220 * window.devicePixelRatio;
+  canvas.style.height = '220px';
+  const ctx = _grafCtx;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  ctx.clearRect(0, 0, canvas.offsetWidth, 220);
+  ctx.fillStyle = '#ccc';
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(msg, canvas.offsetWidth/2, 110);
+  document.getElementById('graf-legenda').innerHTML = '';
+}
+
+function _desenharGrafico(colunas, series){
+  const canvas = _grafCanvas;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth;
+  const H = 300;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
+  const ctx = _grafCtx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const PAD_L = 36, PAD_R = 16, PAD_T = 18, PAD_B = 52;
+  const gW = W - PAD_L - PAD_R;
+  const gH = H - PAD_T - PAD_B;
+  const n = colunas.length;
+  const stepX = n > 1 ? gW / (n - 1) : gW / 2;
+
+  // Fundo
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid horizontal
+  ctx.strokeStyle = '#ece8f0';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD_T + gH - (i / 4) * gH;
+    ctx.beginPath();
+    ctx.moveTo(PAD_L, y);
+    ctx.lineTo(PAD_L + gW, y);
+    ctx.stroke();
+    // Label eixo Y (%)
+    ctx.fillStyle = '#aaa';
+    ctx.font = `${10 * dpr / dpr}px sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText((i * 25) + '%', PAD_L - 4, y + 4);
+  }
+
+  // Eixo X — labels
+  ctx.fillStyle = '#888';
+  ctx.font = '9.5px sans-serif';
+  ctx.textAlign = 'center';
+  colunas.forEach((c, i) => {
+    const x = PAD_L + (n === 1 ? gW / 2 : i * stepX);
+    const label = _labelColuna(c);
+    // Quebra em 2 linhas
+    const partes = label.split(' ');
+    ctx.fillText(partes[0] || '', x, PAD_T + gH + 16);
+    ctx.fillText(partes[1] || '', x, PAD_T + gH + 27);
+  });
+
+  // Linhas de grade vertical (suaves)
+  colunas.forEach((c, i) => {
+    const x = PAD_L + (n === 1 ? gW / 2 : i * stepX);
+    ctx.strokeStyle = '#f0ecf5';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_T);
+    ctx.lineTo(x, PAD_T + gH);
+    ctx.stroke();
+  });
+
+  // Séries
+  series.forEach(serie => {
+    const pontos = serie.norm.map((v, i) => ({
+      x: PAD_L + (n === 1 ? gW / 2 : i * stepX),
+      y: v === null ? null : PAD_T + gH - v * gH,
+      real: serie.valores[i]
+    }));
+
+    // Área preenchida (alpha baixo)
+    ctx.beginPath();
+    let primeiro = true;
+    pontos.forEach(p => {
+      if (p.y === null) return;
+      if (primeiro) { ctx.moveTo(p.x, p.y); primeiro = false; }
+      else ctx.lineTo(p.x, p.y);
+    });
+    // Fecha área até baseline
+    const visiveis = pontos.filter(p => p.y !== null);
+    if (visiveis.length >= 2) {
+      ctx.lineTo(visiveis[visiveis.length-1].x, PAD_T + gH);
+      ctx.lineTo(visiveis[0].x, PAD_T + gH);
+      ctx.closePath();
+      ctx.fillStyle = serie.cor + '18';
+      ctx.fill();
+    }
+
+    // Linha
+    ctx.beginPath();
+    ctx.strokeStyle = serie.cor;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    primeiro = true;
+    pontos.forEach(p => {
+      if (p.y === null) { primeiro = true; return; }
+      if (primeiro) { ctx.moveTo(p.x, p.y); primeiro = false; }
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+
+    // Pontos
+    pontos.forEach(p => {
+      if (p.y === null) return;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = serie.cor;
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  });
+
+  // Borda eixo
+  ctx.strokeStyle = '#d0c8dc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD_L, PAD_T);
+  ctx.lineTo(PAD_L, PAD_T + gH);
+  ctx.lineTo(PAD_L + gW, PAD_T + gH);
+  ctx.stroke();
+}
+
+function _renderLegenda(series){
+  const cont = document.getElementById('graf-legenda');
+  cont.innerHTML = series.map(s => {
+    const min = s.min !== null ? Number(s.min).toFixed(1) : '–';
+    const max = s.max !== null ? Number(s.max).toFixed(1) : '–';
+    return `<div class="graf-leg-item">
+      <div class="graf-leg-cor" style="background:${s.cor};"></div>
+      <span><strong>${s.param.label}</strong> · mín ${min} · máx ${max}${s.param.unidade?' '+s.param.unidade:''}</span>
+    </div>`;
+  }).join('');
+}
+
+function _ativarTooltip(colunas, series){
+  const canvas = _grafCanvas;
+  const tooltip = document.getElementById('graf-tooltip');
+
+  canvas.onmousemove = (e) => {
+    if (!colunas.length || !series.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+
+    const PAD_L = 36, PAD_R = 16;
+    const gW = canvas.offsetWidth - PAD_L - PAD_R;
+    const n = colunas.length;
+    const stepX = n > 1 ? gW / (n - 1) : gW / 2;
+
+    // Acha coluna mais próxima
+    let minDist = Infinity, idx = 0;
+    colunas.forEach((c, i) => {
+      const x = PAD_L + (n === 1 ? gW / 2 : i * stepX);
+      const dist = Math.abs(mx - x);
+      if (dist < minDist) { minDist = dist; idx = i; }
+    });
+
+    if (minDist > 40) { tooltip.style.display = 'none'; return; }
+
+    const col = colunas[idx];
+    const turnoLabel = col.turno === 'DIURNO' ? '☀ Diurno' : '🌙 Noturno';
+    let html = `<strong>${fmtD(col.data)} · ${turnoLabel}</strong><br>`;
+    series.forEach(s => {
+      const v = s.valores[idx];
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.cor};margin-right:4px;"></span>`;
+      html += `${dot}${s.param.label}: <strong>${v !== null ? v : '–'}${s.param.unidade?' '+s.param.unidade:''}</strong><br>`;
+    });
+
+    tooltip.innerHTML = html;
+    tooltip.style.display = 'block';
+    // Posição relativa ao container
+    const containerRect = document.querySelector('.graf-container').getBoundingClientRect();
+    let tx = e.clientX - containerRect.left + 12;
+    let ty = e.clientY - containerRect.top - 10;
+    if (tx + 200 > containerRect.width) tx = tx - 220;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top  = ty + 'px';
+  };
+
+  canvas.onmouseleave = () => { tooltip.style.display = 'none'; };
 }
 
 // ── INICIALIZAÇÃO ────────────────────────────────────────────────────────────
