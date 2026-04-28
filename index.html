@@ -99,6 +99,7 @@ const TOTAL = 10; // leitos
     <div class="leitos-grid" id="leitos-grid"></div>
     <div class="btn-row">
       <button class="btn btn-sec btn-sm" onclick="irTurno()">← Trocar turno</button>
+      <button class="btn btn-pri btn-sm" onclick="irIndicadores()">📊 Indicadores</button>
     </div>
     <div style="font-size:.72rem;color:var(--muted);line-height:1.4;background:var(--cinza);padding:8px 12px;border-radius:6px;margin-top:4px;">
       💡 <strong>Atenção:</strong> a admissão e a alta de pacientes são feitas pela enfermagem. Aqui você vê os pacientes já internados.
@@ -525,7 +526,62 @@ const TOTAL = 10; // leitos
 </div>
 
 <!-- ÁREA OCULTA para render do PDF paisagem do acompanhamento -->
-<div id="acomp-pdf-area" style="position:fixed;top:0;left:-9999px;width:1400px;background:white;z-index:-1;"></div>
+<div id="acomp-pdf-area" style="position:fixed;top:0;left:-9999px;width:1100px;background:white;z-index:-1;"></div>
+
+<!-- TELA INDICADORES -->
+<div id="t-indicadores" class="tela" style="max-width:1100px;">
+  <div class="app-header">
+    <div><h2>📊 Indicadores de Fisioterapia</h2><small>UTI Adulto · Hospital dos Pescadores</small></div>
+  </div>
+  <div style="background:white;border:1px solid var(--borda);border-top:none;border-radius:0 0 var(--r) var(--r);padding:1rem;display:flex;flex-direction:column;gap:.7rem;">
+
+    <!-- FILTRO DE PERÍODO -->
+    <div class="ind-toolbar">
+      <label style="font-weight:600;color:var(--roxo);">Período:</label>
+      <select id="ind-periodo" onchange="_atualizarPeriodoIndicadores()">
+        <option value="30" selected>Últimos 30 dias</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="90">Últimos 90 dias</option>
+        <option value="180">Últimos 180 dias</option>
+        <option value="365">Último ano</option>
+        <option value="custom">Personalizado</option>
+        <option value="all">Todo o histórico</option>
+      </select>
+      <div id="ind-custom" style="display:none;gap:6px;align-items:center;">
+        <span>de</span>
+        <input type="date" id="ind-de">
+        <span>até</span>
+        <input type="date" id="ind-ate">
+      </div>
+      <button class="btn btn-pri btn-sm" onclick="renderIndicadores()">↻ Atualizar</button>
+    </div>
+
+    <!-- CATEGORIAS -->
+    <div class="ind-cats">
+      <button class="ind-cat-btn ativa" data-cat="permanencia">🏥 Mortalidade & Permanência</button>
+      <button class="ind-cat-btn" data-cat="desmame">💨 Desmame & Extubação</button>
+      <button class="ind-cat-btn" data-cat="mobilizacao">🏃 Mobilização & Cobertura</button>
+    </div>
+
+    <!-- CONTEÚDO -->
+    <div id="ind-conteudo"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-sec btn-sm" onclick="irLeitos()">← Leitos</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FICHA DO INDICADOR -->
+<div class="overlay" id="modal-ficha">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <h3 id="ficha-titulo">Indicador</h3>
+      <button class="modal-close" onclick="fecharFichaIndicador()">×</button>
+    </div>
+    <div class="modal-body" id="ficha-body" style="max-height:70vh;overflow-y:auto;"></div>
+  </div>
+</div>
 
 <!-- TELA PREVIEW -->
 <div id="t-prev" class="tela">
