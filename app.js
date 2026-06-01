@@ -238,26 +238,18 @@ function abrirLeito(leito){
       toast('Leito vago — admissão deve ser feita pela enfermagem', true);
       return;
     }
+    // Formulário unificado: carrega evolução + acompanhamento na mesma tela.
     leitoAtual = leito;
-    document.getElementById('modal-escolha-titulo').textContent =
-      `Leito ${pad(leito)} – ${l.pac || 'Paciente'}`;
-    document.getElementById('modal-escolha').classList.add('show');
+    abrirForm(leito);
   });
 }
 
-function fecharModalEscolha(){
-  document.getElementById('modal-escolha').classList.remove('show');
-}
-
-function abrirEvolucao(){
-  fecharModalEscolha();
-  abrirForm(leitoAtual);
-}
-
-function abrirAcompanhamento(){
-  fecharModalEscolha();
-  abrirAcomp(leitoAtual);
-}
+// Stubs mantidos por compatibilidade (eram chamados pelo modal de escolha,
+// já removido). Caso algum botão externo ainda referencie estas funções, elas
+// agora simplesmente abrem o formulário unificado.
+function fecharModalEscolha(){ /* modal removido — no-op */ }
+function abrirEvolucao(){ abrirForm(leitoAtual); }
+function abrirAcompanhamento(){ abrirForm(leitoAtual); }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ACOMPANHAMENTO DIÁRIO — ficha cumulativa por internação
@@ -276,9 +268,10 @@ function acompKey(leito, adm){
 
 async function abrirAcomp(leito){
   leitoAtual = leito;
-  showLoading('Carregando acompanhamento...');
+  // Não troca de tela: o acompanhamento agora vive dentro do t-form unificado.
+  // Esta função só carrega/inicializa os dados do acompanhamento na tela atual.
   const d = await leitosData();
-  const l = d[leito];
+  const l = d[leito] || {};
   const adm = l.adm || '';
 
   // Carrega documento existente ou inicializa um novo
@@ -310,7 +303,8 @@ async function abrirAcomp(leito){
   acompAtual = doc;
   acompEditandoIdx = -1;
 
-  // Preenche header/cabeçalho
+  // Preenche header/cabeçalho (campos duplicados ficam ocultos — input type=hidden — e
+  // são mantidos para compatibilidade do salvamento; os visíveis são adm, altura, peso, VT).
   setF('a-pac', doc.pac);
   setF('a-leito', pad(leito));
   setF('a-idade', doc.idade);
@@ -339,18 +333,6 @@ async function abrirAcomp(leito){
 
   _renderTabelaAcomp();
   _renderEventosAcomp();
-
-  // Atualiza header
-  document.getElementById('acomp-sub').textContent = `Leito ${pad(leito)} · ${doc.pac} · adm ${fmtD(doc.adm)||'—'}`;
-  const b = document.getElementById('badge-acomp');
-  const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
-  b.textContent = mapa[turno] || turno;
-  b.className = 'badge ' + (turno === 'NOTURNO' ? 'badge-n' : 'badge-d');
-
-  _ativarCaixaAltaEm(document.getElementById('t-acomp'));
-  hideLoading();
-  mostrarTela('t-acomp');
-  window.scrollTo(0,0);
 }
 
 function _limparFormColuna(){
@@ -472,9 +454,10 @@ async function salvarColunaAcomp(){
   cancelarEdicaoColuna();
 }
 
-async function salvarCabecalhoAcomp(){
+async function salvarCabecalhoAcomp(silencioso){
   if (!acompAtual) return;
-  acompAtual.idade  = gf('a-idade');
+  // Prioriza idade visível (campo da Identificação) sobre o campo oculto a-idade
+  acompAtual.idade  = gf('f-idade') || gf('a-idade');
   acompAtual.altura = gf('a-altura');
   acompAtual.peso   = gf('a-peso');
   acompAtual.vt4    = gf('a-vt4');
@@ -482,7 +465,42 @@ async function salvarCabecalhoAcomp(){
   acompAtual.vt8    = gf('a-vt8');
   acompAtual.atualizadoEm = new Date().toISOString();
   await dbSet(acompKey(acompAtual.leito, acompAtual.adm), acompAtual);
-  toast('✓ Cabeçalho salvo');
+  if (!silencioso) toast('✓ Dados longitudinais salvos');
+}
+
+// Verifica se a coluna em edição/criação tem algum campo clínico preenchido
+// (data/turno/hora/prof não contam — eles são pré-preenchidos automaticamente).
+function _colunaAcompTemConteudo(){
+  const idsClinic = ['ac-oxig','ac-vni','ac-tvni','ac-dtot','ac-modo','ac-fio2',
+    'ac-pcps','ac-peep','ac-vc','ac-vm','ac-tre','ac-ph','ac-paco2','ac-pao2',
+    'ac-hco3','ac-be','ac-relacao','ac-cuff','ac-inc','ac-hmef','ac-qsec','ac-asec',
+    'ac-leuc','ac-hbht','ac-plaq','ac-urcr','ac-pcr','ac-jh'];
+  return idsClinic.some(id => {
+    const v = gf(id);
+    return v !== '' && v != null;
+  });
+}
+
+// Versão silenciosa de salvarColunaAcomp: sem confirm(), sem toast.
+// Usada pelo "Gerar impressão" para garantir que a coluna do turno fica salva.
+async function _salvarColunaAcompSilencioso(){
+  if (!acompAtual) return;
+  const col = _coletarColuna();
+  if (!col.data || !col.turno) return;
+  if (acompEditandoIdx >= 0) {
+    acompAtual.colunas[acompEditandoIdx] = col;
+  } else {
+    const dup = acompAtual.colunas.findIndex(c => c.data === col.data && c.turno === col.turno);
+    if (dup >= 0) acompAtual.colunas[dup] = col;
+    else acompAtual.colunas.push(col);
+  }
+  const ordem = { DIURNO:1, NOTURNO:2 };
+  acompAtual.colunas.sort((a,b) => {
+    if (a.data !== b.data) return a.data.localeCompare(b.data);
+    return (ordem[a.turno]||9) - (ordem[b.turno]||9);
+  });
+  acompAtual.atualizadoEm = new Date().toISOString();
+  await dbSet(acompKey(acompAtual.leito, acompAtual.adm), acompAtual);
 }
 
 // Linhas que aparecem na tabela do acompanhamento.
@@ -602,105 +620,12 @@ async function removerEventoAcomp(idx){
   _renderEventosAcomp();
 }
 
-// ── PDF PAISAGEM DO ACOMPANHAMENTO ───────────────────────────────────────────
+// ── PDF PAISAGEM DO ACOMPANHAMENTO (legado) ──────────────────────────────────
+// O envio do acompanhamento agora ocorre dentro do PDF unificado da evolução
+// (ver gerarPDF / enviarTurnoDrive). Esta função foi mantida apenas como ponto
+// de extensão caso seja preciso voltar a enviar o acompanhamento isoladamente.
 async function enviarAcompanhamentoDrive(){
-  if (!acompAtual) return;
-  if (!acompAtual.colunas.length) {
-    toast('Adicione pelo menos uma coluna antes de enviar', true);
-    return;
-  }
-  const status = document.getElementById('acomp-status');
-  status.textContent = 'Gerando PDF...'; status.style.color = 'var(--muted)';
-  showLoading('Gerando PDF...');
-
-  try {
-    const {jsPDF} = window.jspdf;
-    // A4 paisagem: 297 × 210 mm
-    const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
-    const pageW = pdf.internal.pageSize.getWidth();   // 297
-    const pageH = pdf.internal.pageSize.getHeight();  // 210
-    const margin = 10;
-    const contentW = pageW - margin*2; // 277
-
-    // Divide as colunas em páginas de no máximo 8 colunas por página
-    const COLS_POR_PAG = 8;
-    const total = acompAtual.colunas.length;
-    const numPag = Math.max(1, Math.ceil(total / COLS_POR_PAG));
-
-    for (let p = 0; p < numPag; p++) {
-      const inicio = p * COLS_POR_PAG;
-      const fim = Math.min(inicio + COLS_POR_PAG, total);
-      const colsDaPagina = acompAtual.colunas.slice(inicio, fim);
-
-      // Renderiza o HTML da página na área oculta
-      const areaPdf = document.getElementById('acomp-pdf-area');
-      areaPdf.innerHTML = _renderPaginaPDFAcomp(colsDaPagina, p+1, numPag, p===numPag-1);
-
-      // Aguarda o DOM estabilizar
-      await new Promise(r => setTimeout(r, 120));
-
-      const canvas = await html2canvas(areaPdf.firstElementChild, {
-        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
-        width: 1100, windowWidth: 1100
-      });
-
-      // Calcula dimensões para caber na página
-      const mmH = (canvas.height / canvas.width) * contentW;
-      let larguraUso = contentW, alturaUso = mmH;
-      const contentH = pageH - margin*2;
-      if (alturaUso > contentH) {
-        // Reduz proporcionalmente
-        const f = contentH / alturaUso;
-        alturaUso = contentH;
-        larguraUso = larguraUso * f;
-      }
-      const offsetX = margin + (contentW - larguraUso) / 2;
-
-      if (p > 0) pdf.addPage();
-      pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', offsetX, margin, larguraUso, alturaUso);
-    }
-
-    // Nome e pasta
-    const nomePac = (acompAtual.pac || '').trim();
-    const primNome = (nomePac.split(' ')[0] || 'Pac').toUpperCase();
-    const hj = hoje();
-    const [ano, mes, dia] = hj.split('-');
-    const dataBR = dia + mes + ano;
-    const pastaNome = nomePac
-      ? `Leito ${pad(acompAtual.leito)} - ${nomePac}`
-      : `Leito ${pad(acompAtual.leito)} - Sem identificacao`;
-    const titulo = `AcompFisio_L${pad(acompAtual.leito)}_${dataBR}_${primNome}`;
-
-    status.textContent = 'Enviando ao Drive...';
-    const dataUri = pdf.output('datauristring');
-    const base64 = dataUri.split(',')[1];
-
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        titulo,
-        arquivoBase64: base64,
-        pasta: pastaNome,
-        pastaRaizId: PASTA_ACOMPANHAMENTO_ID
-      })
-    });
-
-    status.textContent = '✓ Enviado ao Drive com sucesso';
-    status.style.color = 'var(--verde)';
-    toast('✓ Acompanhamento salvo no Drive');
-
-  } catch(err) {
-    console.error('PDF acomp:', err);
-    status.textContent = 'Erro ao gerar/enviar. Tente novamente.';
-    status.style.color = 'var(--vermelho)';
-    toast('Erro ao enviar PDF', true);
-  } finally {
-    // Limpa a área oculta
-    document.getElementById('acomp-pdf-area').innerHTML = '';
-    hideLoading();
-  }
+  toast('O acompanhamento agora é enviado junto com a evolução (PDF unificado).', true);
 }
 
 // Gera o HTML de uma página do PDF do acompanhamento
@@ -889,6 +814,7 @@ function _adicionarNotaAcomp(area, acompDoc){
 // ── FORMULÁRIO DE EVOLUÇÃO ───────────────────────────────────────────────────
 async function abrirForm(leito){
   leitoAtual = leito;
+  showLoading('Carregando ficha do leito...');
   const d = await leitosData();
   const l = d[leito];
 
@@ -934,6 +860,19 @@ async function abrirForm(leito){
 
   toggleVMI();
   _ativarCaixaAlta();
+
+  // === Carrega também o ACOMPANHAMENTO DIÁRIO (agora unificado nesta tela) ===
+  try {
+    await abrirAcomp(leito);
+  } catch(e) {
+    console.warn('Falha ao carregar acompanhamento:', e);
+  }
+
+  // Garante que a seção de gráficos comece oculta (era assim no t-acomp original)
+  const sg = document.getElementById('secao-graficos');
+  if (sg) sg.style.display = 'none';
+
+  hideLoading();
   irForm();
 }
 
@@ -1274,10 +1213,23 @@ async function gerarPreview(){
   const dados = _coletarDados();
   if (!dados.pac) { toast('Paciente não identificado', true); return; }
 
-  // Salva no Firestore antes de mostrar preview
+  // Salva no Firestore: evolução + acompanhamento (cabeçalho longitudinal e coluna do turno).
   showLoading('Salvando...');
   try {
     await dbSet(evKey(leitoAtual, turno, hoje()), dados);
+
+    // Auto-salva acompanhamento sem interromper com toasts/confirm.
+    if (acompAtual) {
+      try {
+        // Sincroniza a idade visível com o documento longitudinal
+        setF('a-idade', gf('f-idade') || gf('a-idade'));
+        await salvarCabecalhoAcomp(true);
+        // Se a coluna em edição tem dados clínicos OU já estamos editando uma coluna existente, persiste.
+        if (_colunaAcompTemConteudo() || acompEditandoIdx >= 0) {
+          await _salvarColunaAcompSilencioso();
+        }
+      } catch(eAc) { console.warn('Auto-save acomp falhou:', eAc); }
+    }
   } catch(e) {
     console.error('Erro ao salvar:', e);
     toast('Erro ao salvar — verifique a conexão', true);
@@ -1285,7 +1237,7 @@ async function gerarPreview(){
     hideLoading();
   }
 
-  // Carrega acompanhamento do leito (se houver) para adicionar nota na pré-visualização
+  // Recarrega o doc do acompanhamento (já com as alterações deste turno) para a nota da preview
   const acompDoc = await _buscarAcompDoLeito(leitoAtual);
 
   renderPreview(dados);
