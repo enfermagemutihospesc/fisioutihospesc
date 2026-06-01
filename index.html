@@ -109,36 +109,6 @@ const TOTAL = 10; // leitos
   </div>
 </div>
 
-<!-- MODAL DE ESCOLHA DE FORMULÁRIO -->
-<div class="overlay" id="modal-escolha">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="modal-escolha-titulo">Leito – Fisioterapia</h3>
-      <button class="modal-close" onclick="fecharModalEscolha()">×</button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:.82rem;color:var(--muted);line-height:1.5;margin-bottom:4px;">Escolha o tipo de registro:</p>
-      <button class="btn-opcao" onclick="abrirEvolucao()">
-        <span class="btn-opcao-icon">📋</span>
-        <span class="btn-opcao-texto">
-          <strong>Evolução Fisioterapia</strong>
-          <small>Ficha do turno atual (Diurno/Noturno)</small>
-        </span>
-      </button>
-      <button class="btn-opcao acomp" onclick="abrirAcompanhamento()">
-        <span class="btn-opcao-icon">📊</span>
-        <span class="btn-opcao-texto">
-          <strong>Acompanhamento Diário</strong>
-          <small>Ficha longitudinal cumulativa</small>
-        </span>
-      </button>
-      <div style="display:flex;justify-content:flex-end;padding-top:6px;">
-        <button class="btn btn-sec btn-sm" onclick="fecharModalEscolha()">Cancelar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- TELA FORMULÁRIO DE EVOLUÇÃO FISIOTERAPIA -->
 <div id="t-form" class="tela">
   <div class="app-header">
@@ -340,45 +310,32 @@ const TOTAL = 10; // leitos
       </div>
     </div>
 
-    <div class="btn-row">
-      <button class="btn btn-sec" onclick="irLeitos()">← Leitos</button>
-      <button class="btn btn-pri" id="btn-gerar" onclick="gerarPreview()">Gerar impressão →</button>
-    </div>
-  </div>
-</div>
+    <!-- ═══════════════════════════════════════════════════════════
+         ACOMPANHAMENTO DIÁRIO — incorporado ao formulário de evolução
+         (ficha longitudinal cumulativa, registrada turno a turno)
+         ═══════════════════════════════════════════════════════════ -->
 
-<!-- TELA ACOMPANHAMENTO DIÁRIO -->
-<div id="t-acomp" class="tela" style="max-width:1100px;">
-  <div class="app-header">
-    <div><h2>📊 Acompanhamento Diário</h2><small id="acomp-sub">Leito · Paciente</small></div>
-    <div class="header-right">
-      <span class="badge" id="badge-acomp"></span>
-    </div>
-  </div>
-
-  <div style="background:white;border:1px solid var(--borda);border-top:none;border-radius:0 0 var(--r) var(--r);padding:1rem;display:flex;flex-direction:column;gap:.9rem;">
-
-    <!-- CABEÇALHO do acompanhamento (dados fixos do paciente) -->
+    <!-- Cabeçalho do acompanhamento (apenas campos exclusivos; Nome/Idade/Leito/Diag vêm da Identificação) -->
     <div class="secao">
-      <div class="secao-t">Dados do Paciente</div>
+      <div class="secao-t">📊 Acompanhamento Diário — Dados Longitudinais</div>
       <div class="secao-c">
-        <div class="dc">
-          <div style="flex:3;"><label>Nome</label><input type="text" id="a-pac" readonly style="background:var(--cinza);"></div>
-          <div><label>Idade</label><input type="text" id="a-idade"></div>
-          <div><label>Leito</label><input type="text" id="a-leito" readonly style="background:var(--cinza);"></div>
-        </div>
+        <!-- Campos espelhados da Identificação, mantidos ocultos para compatibilidade com o salvamento do acompanhamento -->
+        <input type="hidden" id="a-pac">
+        <input type="hidden" id="a-idade">
+        <input type="hidden" id="a-leito">
+        <input type="hidden" id="a-diag">
+
         <div class="dc">
           <div><label>Admissão UTI</label><input type="date" id="a-adm" readonly style="background:var(--cinza);"></div>
           <div><label>Altura (m)</label><input type="number" step="0.01" id="a-altura" placeholder="Ex: 1,70"></div>
           <div><label>Peso predito (kg)</label><input type="number" step="0.1" id="a-peso"></div>
         </div>
-        <div><label>Diagnósticos</label><input type="text" id="a-diag" readonly style="background:var(--cinza);"></div>
         <div class="dc">
           <div><label>VT 4 ml/kg</label><input type="number" step="0.1" id="a-vt4" placeholder="mL"></div>
           <div><label>VT 6 ml/kg</label><input type="number" step="0.1" id="a-vt6" placeholder="mL"></div>
           <div><label>VT 8 ml/kg</label><input type="number" step="0.1" id="a-vt8" placeholder="mL"></div>
         </div>
-        <button class="btn btn-sec btn-sm" onclick="salvarCabecalhoAcomp()">💾 Salvar cabeçalho</button>
+        <button class="btn btn-sec btn-sm" onclick="salvarCabecalhoAcomp()">💾 Salvar dados longitudinais</button>
       </div>
     </div>
 
@@ -552,9 +509,8 @@ const TOTAL = 10; // leitos
     <div class="btn-row">
       <button class="btn btn-sec" onclick="irLeitos()">← Leitos</button>
       <button class="btn btn-sec" onclick="abrirGraficos()">📈 Gráficos</button>
-      <button class="btn btn-pdf" onclick="enviarAcompanhamentoDrive()">☁ Enviar PDF ao Drive</button>
+      <button class="btn btn-pri" id="btn-gerar" onclick="gerarPreview()">Gerar impressão →</button>
     </div>
-    <p id="acomp-status" style="font-size:.72rem;color:var(--muted);text-align:right;"></p>
   </div>
 </div>
 
