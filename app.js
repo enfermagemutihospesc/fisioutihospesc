@@ -704,8 +704,11 @@ async function enviarAcompanhamentoDrive(){
 }
 
 // Gera o HTML de uma página do PDF do acompanhamento
+// Aceita o objeto acomp como parâmetro (para anexar ao PDF de outros leitos).
 function _renderPaginaPDFAcomp(cols, pagNum, pagTotal, incluirEventos){
-  const cab = acompAtual;
+  return _renderPaginaPDFAcompCom(acompAtual, cols, pagNum, pagTotal, incluirEventos);
+}
+function _renderPaginaPDFAcompCom(cab, cols, pagNum, pagTotal, incluirEventos){
   const colsH = cols.map(c =>
     `<th>${fmtD(c.data)}<br>${_labelTurno(c.turno)}${c.hora?'<br>'+c.hora:''}</th>`
   ).join('');
@@ -778,6 +781,109 @@ function _renderPaginaPDFAcomp(cols, pagNum, pagTotal, incluirEventos){
       Gerado em ${new Date().toLocaleString('pt-BR')} por ${esc(usuarioEmail)||'—'}
     </div>
   </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ANEXAÇÃO DO ACOMPANHAMENTO ÀS EVOLUÇÕES (arquivo único + impressão 2 folhas)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Busca o documento de acompanhamento de um leito (usando a data de admissão atual).
+async function _buscarAcompDoLeito(leito){
+  try {
+    const leitos = await leitosData();
+    const l = leitos[leito];
+    if (!l) return null;
+    const adm = l.adm || '';
+    return await dbGet(acompKey(leito, adm));
+  } catch(e) {
+    console.warn('Erro buscando acompanhamento do leito ' + leito + ':', e);
+    return null;
+  }
+}
+
+// Anexa as páginas do acompanhamento (paisagem) a um PDF jsPDF já existente.
+// Retorna true se anexou algo, false se não havia acompanhamento.
+async function _anexarAcompAoPDF(pdf, acompDoc){
+  if (!acompDoc || !acompDoc.colunas || !acompDoc.colunas.length) return false;
+
+  const COLS_POR_PAG = 8;
+  const total = acompDoc.colunas.length;
+  const numPag = Math.max(1, Math.ceil(total / COLS_POR_PAG));
+  const areaPdf = document.getElementById('acomp-pdf-area');
+
+  // A4 paisagem
+  const pageWL = 297, pageHL = 210;
+  const marginL = 10;
+  const contentWL = pageWL - marginL*2;
+  const contentHL = pageHL - marginL*2;
+
+  for (let p = 0; p < numPag; p++) {
+    const inicio = p * COLS_POR_PAG;
+    const fim = Math.min(inicio + COLS_POR_PAG, total);
+    const colsDaPagina = acompDoc.colunas.slice(inicio, fim);
+
+    areaPdf.innerHTML = _renderPaginaPDFAcompCom(acompDoc, colsDaPagina, p+1, numPag, p === numPag - 1);
+    await new Promise(r => setTimeout(r, 120));
+
+    const canvas = await html2canvas(areaPdf.firstElementChild, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+      width: 1100, windowWidth: 1100
+    });
+
+    const mmH = (canvas.height / canvas.width) * contentWL;
+    let larguraUso = contentWL, alturaUso = mmH;
+    if (alturaUso > contentHL) {
+      const f = contentHL / alturaUso;
+      alturaUso = contentHL;
+      larguraUso = larguraUso * f;
+    }
+    const offsetX = marginL + (contentWL - larguraUso) / 2;
+
+    pdf.addPage('a4', 'landscape');
+    pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', offsetX, marginL, larguraUso, alturaUso);
+  }
+
+  areaPdf.innerHTML = '';
+  return true;
+}
+
+// Gera o HTML de TODAS as páginas do acompanhamento, cada uma envolvida em
+// um <div class="pg-acomp"> para usar com quebra de página paisagem na impressão.
+function _renderAcompPaginasHTML(acompDoc){
+  if (!acompDoc || !acompDoc.colunas || !acompDoc.colunas.length) return '';
+  const COLS_POR_PAG = 8;
+  const total = acompDoc.colunas.length;
+  const numPag = Math.max(1, Math.ceil(total / COLS_POR_PAG));
+  const paginas = [];
+  for (let p = 0; p < numPag; p++) {
+    const inicio = p * COLS_POR_PAG;
+    const fim = Math.min(inicio + COLS_POR_PAG, total);
+    const colsDaPagina = acompDoc.colunas.slice(inicio, fim);
+    paginas.push(_renderPaginaPDFAcompCom(acompDoc, colsDaPagina, p+1, numPag, p === numPag - 1));
+  }
+  return paginas.map(h => `<div class="pg-acomp">${h}</div>`).join('');
+}
+
+// Adiciona uma pequena nota informativa ao final da pré-visualização da evolução,
+// logo após as Observações e antes do rodapé, indicando que o acompanhamento
+// será incluído como folha(s) separada(s) em formato paisagem.
+function _adicionarNotaAcomp(area, acompDoc){
+  if (!area) return;
+  if (!acompDoc || !acompDoc.colunas || !acompDoc.colunas.length) return;
+  const ult = acompDoc.colunas[acompDoc.colunas.length - 1];
+  const nota = document.createElement('div');
+  nota.className = 'pv-sec';
+  nota.innerHTML = `
+    <div class="pv-sec-t">📊 Acompanhamento Diário</div>
+    <div class="pv-sec-c" style="font-size:.7rem;color:#444;line-height:1.5;">
+      Ficha longitudinal cumulativa com <strong>${acompDoc.colunas.length}</strong> coluna(s) registrada(s).
+      Última atualização: <strong>${fmtD(ult.data)} (${_labelTurno(ult.turno)})</strong>.
+      <br><em>↳ Incluído como folha(s) separada(s) em formato paisagem após esta página.</em>
+    </div>
+  `;
+  const foot = area.querySelector('.pv-foot');
+  if (foot) area.insertBefore(nota, foot);
+  else area.appendChild(nota);
 }
 
 // ── FORMULÁRIO DE EVOLUÇÃO ───────────────────────────────────────────────────
@@ -1179,7 +1285,12 @@ async function gerarPreview(){
     hideLoading();
   }
 
+  // Carrega acompanhamento do leito (se houver) para adicionar nota na pré-visualização
+  const acompDoc = await _buscarAcompDoLeito(leitoAtual);
+
   renderPreview(dados);
+  _adicionarNotaAcomp(document.getElementById('preview-area'), acompDoc);
+
   const b = document.getElementById('badge-prev');
   const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[turno] || turno;
@@ -1385,12 +1496,20 @@ async function imprimirTurnoCompleto(){
   areaTemp.style.cssText = 'position:fixed;top:0;left:-9999px;width:780px;background:white;z-index:-1;';
   document.body.appendChild(areaTemp);
 
+  // Pré-carrega TODOS os acompanhamentos em paralelo (mais rápido)
+  const acompDocsArr = await Promise.all(comEvolucao.map(it => _buscarAcompDoLeito(it.leito)));
+  const acompDocs = {};
+  comEvolucao.forEach((it, i) => { acompDocs[it.leito] = acompDocsArr[i]; });
+
   const blocos = [];
   for (const item of comEvolucao) {
     try {
       renderPreviewEm(areaTemp, item.ev);
+      _adicionarNotaAcomp(areaTemp, acompDocs[item.leito]);
       await new Promise(r => setTimeout(r, 50));
-      blocos.push(areaTemp.innerHTML);
+      const evHTML = areaTemp.innerHTML;
+      const acompHTML = _renderAcompPaginasHTML(acompDocs[item.leito]);
+      blocos.push({ ev: evHTML, acomp: acompHTML });
     } catch(e) { console.warn('Erro renderizando leito ' + item.leito + ':', e); }
   }
   document.body.removeChild(areaTemp);
@@ -1411,19 +1530,24 @@ async function imprimirTurnoCompleto(){
     <title>Evoluções ${_labelTurno(turno)} – ${dataBR}</title>
     <style>${cssFull}
       body{background:white;padding:0;margin:0;}
-      .pg{page-break-after:always;padding:20px;}
-      .pg:last-child{page-break-after:auto;}
+      /* Páginas nomeadas: retrato para evolução, paisagem para acompanhamento */
+      @page evpage { size: A4 portrait; margin: 12mm; }
+      @page acpage { size: A4 landscape; margin: 8mm; }
+      .pg-ev{ page: evpage; page-break-after: always; break-after: page; padding:18px; }
+      .pg-acomp{ page: acpage; page-break-after: always; break-after: page; padding:6px; }
+      .pg-ev:last-child, .pg-acomp:last-child{ page-break-after: auto; break-after: auto; }
+      .pg-acomp .pdf-acomp-area{ width:100% !important; }
       @media print{.no-print{display:none!important;}}
       .no-print{background:var(--roxo,#5b2c6f);color:white;padding:10px;text-align:center;position:sticky;top:0;z-index:99;}
       .no-print button{background:white;color:#5b2c6f;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;margin-left:10px;}
     </style>
   </head><body>
     <div class="no-print">
-      ${total} evolução${total>1?'ões':''} · ${_labelTurno(turno)} · ${dataBR}
+      ${total} evolução${total>1?'ões':''} · ${_labelTurno(turno)} · ${dataBR} · cada leito = 1 folha retrato (evolução) + folha(s) paisagem (acompanhamento)
       <button onclick="window.print()">🖨 Imprimir tudo</button>
       <button onclick="window.close()">Fechar</button>
     </div>
-    ${blocos.map(b => `<div class="pg">${b}</div>`).join('')}
+    ${blocos.map(b => `<div class="pg-ev">${b.ev}</div>${b.acomp || ''}`).join('')}
     <script>setTimeout(()=>window.print(),800);<\/script>
   </body></html>`);
   w.document.close();
@@ -1449,9 +1573,14 @@ async function enviarTurnoDrive(){
   if (!comEvolucao.length) { toast('Nenhuma evolução salva neste turno.', true); return; }
 
   const total = comEvolucao.length;
-  if (!confirm(`Enviar ${total} evolução${total>1?'ões':''} do turno ${_labelTurno(turno)} ao Drive?\n\nCada evolução será enviada como PDF individual na pasta do paciente.`)) return;
+  if (!confirm(`Enviar ${total} evolução${total>1?'ões':''} do turno ${_labelTurno(turno)} ao Drive?\n\nCada arquivo conterá a evolução (retrato) + acompanhamento diário (paisagem) como um único PDF.`)) return;
 
   showLoading(`Gerando PDFs (0/${total})...`);
+
+  // Pré-carrega TODOS os acompanhamentos em paralelo
+  const acompDocsArr = await Promise.all(comEvolucao.map(it => _buscarAcompDoLeito(it.leito)));
+  const acompDocs = {};
+  comEvolucao.forEach((it, i) => { acompDocs[it.leito] = acompDocsArr[i]; });
 
   const { jsPDF } = window.jspdf;
   const LARGURA_FIXA = 780;
@@ -1468,6 +1597,7 @@ async function enviarTurnoDrive(){
     document.getElementById('loading-msg').textContent = `Gerando PDFs (${i+1}/${total})...`;
     try {
       renderPreviewEm(areaTemp, ev);
+      _adicionarNotaAcomp(areaTemp, acompDocs[leito]);
       await new Promise(r => setTimeout(r, 80));
 
       const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
@@ -1514,6 +1644,11 @@ async function enviarTurnoDrive(){
         }
       }
 
+      // === ANEXA O ACOMPANHAMENTO COMO PÁGINA(S) PAISAGEM ===
+      try {
+        await _anexarAcompAoPDF(pdf, acompDocs[leito]);
+      } catch(eAcomp) { console.warn('Falha ao anexar acomp do leito ' + leito + ':', eAcomp); }
+
       const nomePac = (ev.pac || '').trim();
       const primNome = (nomePac.split(' ')[0] || 'Pac').toUpperCase();
       const pastaNome = nomePac
@@ -1536,7 +1671,7 @@ async function enviarTurnoDrive(){
 
   document.body.removeChild(areaTemp);
   hideLoading();
-  if (erros === 0) toast(`✓ ${ok} PDF${ok>1?'s':''} enviado${ok>1?'s':''} ao Drive`);
+  if (erros === 0) toast(`✓ ${ok} PDF${ok>1?'s':''} enviado${ok>1?'s':''} ao Drive (evolução + acompanhamento)`);
   else toast(`${ok} enviados, ${erros} com erro`, erros > 0);
 }
 
@@ -1604,6 +1739,16 @@ async function gerarPDF(){
         addFatia(yStart, yEnd);
         yStart = yEnd; pag++;
       }
+    }
+
+    // === ANEXA O ACOMPANHAMENTO COMO FOLHA(S) PAISAGEM ===
+    // O arquivo final fica único: evolução (retrato) + acompanhamento (paisagem).
+    status.textContent = 'Anexando acompanhamento...';
+    try {
+      const acompDoc = await _buscarAcompDoLeito(leitoAtual);
+      await _anexarAcompAoPDF(pdf, acompDoc);
+    } catch(eAcomp) {
+      console.warn('Falha ao anexar acompanhamento:', eAcomp);
     }
 
     // Nome do arquivo e pasta
