@@ -671,7 +671,7 @@ function _renderPaginaPDFAcompCom(cab, cols, pagNum, pagTotal, incluirEventos){
 
   return `<div class="pdf-acomp-area">
     <div class="ph">
-      <div style="font-size:.7rem;font-weight:700;color:var(--roxo);">🏃 HOSPESC</div>
+      <div style="font-size:.7rem;font-weight:700;color:var(--roxo);"><img src="icon.png" alt="HOSPESC" style="height:28px;width:auto;vertical-align:middle;"></div>
       <h1>HOSPITAL DOS PESCADORES<br>ACOMPANHAMENTO DIÁRIO – FISIOTERAPIA UTI</h1>
       <div style="font-size:.65rem;color:#666;">Pág. ${pagNum}/${pagTotal}</div>
     </div>
@@ -1287,9 +1287,9 @@ function renderPreviewEm(area, d){
 
   area.innerHTML = `
     <div class="pv-h">
-      <div class="logo">🏃</div>
+      <img src="icon.png" alt="HOSPESC" class="logo-img">
       <h1>HOSPITAL DOS PESCADORES<br>FICHA DE EVOLUÇÃO FISIOTERAPIA – UTI</h1>
-      <div class="logo" style="text-align:right;">HOSPESC</div>
+      <div class="logo" style="text-align:right;font-size:.6rem;font-weight:700;color:#555;">HOSPESC</div>
     </div>
 
     <div class="pv-id">
@@ -1566,7 +1566,7 @@ async function enviarTurnoDrive(){
 
       const mmTotal = (canvas.height / canvas.width) * contentW;
       let larguraUso = contentW;
-      const PAGINAS_ALVO = 2;
+      const PAGINAS_ALVO = 1;
       if (mmTotal > PAGINAS_ALVO * contentH) {
         larguraUso = contentW * ((PAGINAS_ALVO * contentH) / mmTotal);
       }
@@ -1662,7 +1662,7 @@ async function gerarPDF(){
 
     const mmTotal = (canvas.height / canvas.width) * contentW;
     let larguraUso = contentW;
-    const PAGINAS_ALVO = 2;
+    const PAGINAS_ALVO = 1;
     if (mmTotal > PAGINAS_ALVO * contentH) {
       const fator = (PAGINAS_ALVO * contentH) / mmTotal;
       larguraUso = contentW * fator;
