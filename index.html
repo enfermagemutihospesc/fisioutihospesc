@@ -171,9 +171,9 @@ const TOTAL = 10; // leitos
       <div class="secao-c">
         <div><label>AP (Ausculta Pulmonar)</label><input type="text" id="f-ap" autocapitalize="characters" placeholder="Ex: MV+ bilateral, roncos difusos..."></div>
         <div class="dc">
-          <div><label>Glasgow / Ramsay</label><input type="text" id="f-gl" autocapitalize="characters" placeholder="Ex: 15 / 2"></div>
-          <div><label>Ectoscopia respiratória</label><input type="text" id="f-ect" autocapitalize="characters" placeholder="Ex: eupneico, uso de MAR..."></div>
+          <div style="flex:1;"><label>Glasgow / Ramsay</label><input type="text" id="f-gl" autocapitalize="characters" placeholder="Ex: 15 / 2"></div>
         </div>
+        <div><label>Ectoscopia respiratória</label><textarea id="f-ect" rows="3" autocapitalize="characters" placeholder="Ex: eupneico, uso de MAR, tiragem intercostal, cianose, padrão respiratório..." style="width:100%;resize:vertical;"></textarea></div>
         <div class="dc">
           <div><label>Total MRC</label><input type="number" id="f-mrc" min="0" max="60" placeholder="0–60"></div>
           <div><label>Johns Hopkins (1–8)</label><input type="number" id="f-jh" min="1" max="8" placeholder="Nível"></div>
@@ -509,7 +509,7 @@ const TOTAL = 10; // leitos
     <div class="btn-row">
       <button class="btn btn-sec" onclick="irLeitos()">← Leitos</button>
       <button class="btn btn-sec" onclick="abrirGraficos()">📈 Gráficos</button>
-      <button class="btn btn-pri" id="btn-gerar" onclick="gerarPreview()">Gerar impressão →</button>
+      <button class="btn btn-pri" id="btn-gerar" onclick="gerarPreview()">Salvar Evolução →</button>
     </div>
   </div>
 </div>
