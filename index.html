@@ -83,8 +83,67 @@ const TOTAL = 10; // leitos
     <span class="sync-dot" id="sync-dot"></span>
     <span id="sync-txt">verificando conexão...</span>
   </div>
-  <div style="text-align:center;margin-top:1rem;">
-    <button class="btn btn-sec btn-sm" onclick="fazerLogout()">Sair</button>
+  <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:1rem;">
+    <button class="btn btn-sec btn-sm" onclick="abrirTrocaSenhaVoluntaria()">🔑 Trocar minha senha</button>
+    <button class="btn btn-sec btn-sm" id="btn-gerenciar-usuarios" style="display:none;" onclick="abrirGerenciarUsuarios()">👥 Gerenciar usuários</button>
+    <button class="btn btn-sec btn-sm" onclick="fazerLogout()">🚪 Sair</button>
+  </div>
+</div>
+
+<!-- TELA TROCA DE SENHA (primeiro acesso ou voluntária) -->
+<div id="t-trocasenha" style="display:none;">
+  <div class="login-box">
+    <img src="icon.png" alt="Hospital dos Pescadores" class="login-logo-img">
+    <div class="badge-sistema">SEGURANÇA</div>
+    <h1>Definir senha</h1>
+    <p class="sub" id="ts-sub">Defina uma nova senha de acesso.</p>
+    <div class="login-campo">
+      <label>Nova senha</label>
+      <input type="password" id="ts-nova" placeholder="mínimo 6 caracteres" autocomplete="new-password">
+    </div>
+    <div class="login-campo">
+      <label>Confirmar nova senha</label>
+      <input type="password" id="ts-conf" placeholder="repita a senha" autocomplete="new-password" onkeydown="if(event.key==='Enter'){confirmarTrocaSenha();return false;}">
+    </div>
+    <button id="btn-trocar-senha" class="btn btn-pri" style="width:100%;" onclick="confirmarTrocaSenha()">Salvar nova senha</button>
+    <button id="btn-pular-troca" class="btn btn-sec btn-sm" style="display:none;width:100%;margin-top:6px;" onclick="irTelaTurno()">Cancelar</button>
+    <p id="ts-err" style="color:#c0392b;font-size:.8rem;text-align:center;margin-top:6px;min-height:16px;"></p>
+  </div>
+</div>
+
+<!-- TELA GERENCIAR USUÁRIOS (admin) -->
+<div id="t-usuarios" class="tela">
+  <div class="app-header" style="border-radius:var(--r);">
+    <div><h2>👥 Gerenciar Fisioterapeutas</h2><small>Cadastrar e excluir acessos · somente admins</small></div>
+    <div class="header-right">
+      <span class="badge-user" onclick="irTelaTurno()" title="Voltar">← Voltar</span>
+    </div>
+  </div>
+  <div style="background:white;border:1px solid var(--borda);border-top:none;border-radius:0 0 var(--r) var(--r);padding:1rem;display:flex;flex-direction:column;gap:.7rem;">
+
+    <!-- ADICIONAR NOVO -->
+    <div class="secao">
+      <div class="secao-t">Adicionar novo fisioterapeuta</div>
+      <div class="secao-c">
+        <div><label>Nome completo</label><input type="text" id="add-nome" placeholder="Ex: MARIA DA SILVA SANTOS"></div>
+        <div class="dc">
+          <div><label>E-mail institucional</label><input type="email" id="add-email" placeholder="nome.s@hospesc.com" autocapitalize="off"></div>
+          <div><label>CREFITO</label><input type="text" id="add-crefito" placeholder="000000"></div>
+        </div>
+        <div><label>Senha provisória</label><input type="text" id="add-senha" value="hospesc123" placeholder="mínimo 6 caracteres"></div>
+        <button class="btn btn-pri" id="btn-add-user" onclick="adicionarUsuario()" style="margin-top:6px;">+ Criar fisioterapeuta</button>
+        <p id="add-err" style="color:#c0392b;font-size:.8rem;min-height:16px;margin-top:4px;"></p>
+        <p style="font-size:.7rem;color:var(--muted);line-height:1.4;">
+          O usuário entrará com a senha provisória e será obrigado a defini-la no primeiro acesso.
+        </p>
+      </div>
+    </div>
+
+    <!-- LISTA -->
+    <div class="secao">
+      <div class="secao-t">Fisioterapeutas cadastrados</div>
+      <div class="secao-c"><div id="usuarios-lista"></div></div>
+    </div>
   </div>
 </div>
 
