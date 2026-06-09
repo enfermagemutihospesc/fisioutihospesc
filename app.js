@@ -18,7 +18,37 @@ try {
 
 // ── ESTADO GLOBAL ────────────────────────────────────────────────────────────
 let turno = '', leitoAtual = 0, usuarioEmail = '';
+let perfilUsuario = null;   // { nome, crefito, email, role, ativo, senhaTrocada }
 const memCache = {}; // cache em memória para leituras paralelas
+
+// ── CONTROLE DE ACESSO ───────────────────────────────────────────────────────
+// E-mails com poder de administrador (gerenciar usuários: cadastrar e excluir).
+const ADMIN_EMAILS = [
+  'luciano.s@hospesc.com',
+  'daniel.o@hospesc.com'
+];
+
+// Senha padrão para o primeiro acesso (o usuário troca obrigatoriamente).
+const SENHA_PADRAO = 'hospesc123';
+
+// Perfil seed (fallback caso o documento ainda não exista no Firestore).
+// Chave = e-mail em minúsculas.
+const PERFIS_SEED = {
+  'kersia.g@hospesc.com':    { nome: 'KERSIA RODRIGUES VARELA GOMES',         crefito: '60013'  },
+  'aianne.m@hospesc.com':    { nome: 'FRANCISCA AIANNE DE OLIVEIRA MELO',     crefito: '144605' },
+  'janaina.p@hospesc.com':   { nome: 'JANAINA MARIA DANTAS PINTO',            crefito: '35094'  },
+  'kassilly.p@hospesc.com':  { nome: 'KASSILLY LOYSE DE ALMEIDA PEREIRA',     crefito: '313102' },
+  'stephanie.n@hospesc.com': { nome: 'STEPHANIE TORQUATO NOGUEIRA',           crefito: '178236' },
+  'ravel.m@hospesc.com':     { nome: 'RAVEL CAVALCANTE MARINHO',              crefito: '216212' },
+  'igor.r@hospesc.com':      { nome: 'IGOR LUCENA REVOREDO',                  crefito: '131041' },
+  'antonia.s@hospesc.com':   { nome: 'MARIA ANTONIA DA SILVA',                crefito: '218093' },
+  'luciano.s@hospesc.com':   { nome: 'LUCIANO SANTOS DA SILVA FILHO',         crefito: '201700' },
+  'daniel.o@hospesc.com':    { nome: 'DANIEL ANTUNES DE OLIVEIRA',            crefito: '216229' }
+};
+
+function _isAdmin(){
+  return ADMIN_EMAILS.includes((usuarioEmail||'').trim().toLowerCase());
+}
 
 // ── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -124,13 +154,13 @@ async function leitosData(){
 // ── NAVEGAÇÃO ────────────────────────────────────────────────────────────────
 function mostrarTela(id){
   document.querySelectorAll('.tela').forEach(t => t.classList.remove('ativa'));
-  ['t-login','t-turno'].forEach(tid => {
+  ['t-login','t-turno','t-trocasenha'].forEach(tid => {
     const el = document.getElementById(tid);
     if (el) el.style.display = 'none';
   });
   const el = document.getElementById(id);
   if (!el) return;
-  if (['t-login','t-turno'].includes(id)) el.style.display = 'flex';
+  if (['t-login','t-turno','t-trocasenha'].includes(id)) el.style.display = 'flex';
   else el.classList.add('ativa');
 }
 
@@ -153,7 +183,7 @@ function irPreview(){ mostrarTela('t-prev'); window.scrollTo(0,0); }
 
 // ── AUTENTICAÇÃO ─────────────────────────────────────────────────────────────
 async function fazerLogin(){
-  const email = gf('li-email').trim();
+  const email = gf('li-email').trim().toLowerCase();
   const senha = gf('li-senha');
   const errEl = document.getElementById('login-err');
   const btn = document.getElementById('btn-entrar');
@@ -176,8 +206,222 @@ async function fazerLogin(){
 
 function fazerLogout(){
   if (!confirm('Sair do sistema?')) return;
+  perfilUsuario = null;
   if (auth) auth.signOut();
   else irTelaTurno();
+}
+
+// ── PERFIS DE USUÁRIO (Firestore: 'usuarios_fisio', docId = e-mail) ──────────
+function _perfilSeed(email){
+  const s = PERFIS_SEED[email];
+  return {
+    email,
+    nome:    s ? s.nome    : email.split('@')[0].toUpperCase(),
+    crefito: s ? s.crefito : '',
+    role:    ADMIN_EMAILS.includes(email) ? 'admin' : 'fisio',
+    ativo:   true,
+    senhaTrocada: true   // seed nunca força troca (evita travar usuários já existentes)
+  };
+}
+
+async function _carregarPerfil(email){
+  email = (email||'').trim().toLowerCase();
+  if (!email) return null;
+  if (modoOffline || !db) return _perfilSeed(email);
+
+  const comTimeout = (p, ms) => Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+  ]);
+
+  try {
+    const ref  = db.collection('usuarios_fisio').doc(email);
+    const snap = await comTimeout(ref.get(), 8000);
+    if (snap.exists) return { email, ...snap.data() };
+    // Documento não existe: cria em BACKGROUND com seed (não bloqueia login)
+    const novo = _perfilSeed(email);
+    ref.set({
+      nome: novo.nome, crefito: novo.crefito, role: novo.role,
+      ativo: true, senhaTrocada: true, criadoEm: new Date().toISOString()
+    }).catch(e => console.warn('[Perfil] gravar seed:', e && e.code));
+    return novo;
+  } catch(e){
+    console.warn('[Perfil] leitura falhou, usando seed:', e && (e.code||e.message));
+    return _perfilSeed(email);
+  }
+}
+
+async function _marcarSenhaTrocada(email){
+  email = (email||'').trim().toLowerCase();
+  if (modoOffline || !db || !email) return;
+  try { await db.collection('usuarios_fisio').doc(email).update({ senhaTrocada: true }); }
+  catch(e){ console.warn('[Perfil] senhaTrocada:', e); }
+}
+
+async function _listarUsuarios(){
+  if (modoOffline || !db) return [];
+  try {
+    const snap = await db.collection('usuarios_fisio').get();
+    return snap.docs.map(d => ({ email: d.id, ...d.data() }))
+                    .sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  } catch(e){ console.warn('[Usuarios] listar:', e); return []; }
+}
+
+function _atualizarBotaoAdmin(){
+  const g = document.getElementById('btn-gerenciar-usuarios');
+  if (g) g.style.display = _isAdmin() ? 'inline-block' : 'none';
+}
+
+// ── TROCA DE SENHA ───────────────────────────────────────────────────────────
+function abrirTrocaSenhaVoluntaria(){
+  const sub = document.getElementById('ts-sub');
+  if (sub) sub.textContent = 'Defina uma nova senha de acesso.';
+  const btnPular = document.getElementById('btn-pular-troca');
+  if (btnPular) btnPular.style.display = 'block';
+  document.getElementById('ts-nova').value = '';
+  document.getElementById('ts-conf').value = '';
+  document.getElementById('ts-err').textContent = '';
+  mostrarTela('t-trocasenha');
+}
+
+async function confirmarTrocaSenha(){
+  const nova  = gf('ts-nova');
+  const conf  = gf('ts-conf');
+  const errEl = document.getElementById('ts-err');
+  const btn   = document.getElementById('btn-trocar-senha');
+  errEl.textContent = '';
+  if (!nova || nova.length < 6) { errEl.textContent = 'A senha deve ter ao menos 6 caracteres.'; return; }
+  if (nova !== conf)            { errEl.textContent = 'As senhas não coincidem.'; return; }
+
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Sessão expirada. Entre novamente.');
+    await user.updatePassword(nova);
+    await _marcarSenhaTrocada(user.email);
+    if (perfilUsuario) perfilUsuario.senhaTrocada = true;
+    toast('✓ Senha alterada com sucesso!');
+    document.getElementById('ts-nova').value = '';
+    document.getElementById('ts-conf').value = '';
+    irTelaTurno();
+  } catch(e){
+    if (e.code === 'auth/requires-recent-login') {
+      errEl.textContent = 'Por segurança, saia e entre novamente para trocar a senha.';
+    } else if (e.code === 'auth/weak-password') {
+      errEl.textContent = 'Senha muito fraca. Use ao menos 6 caracteres.';
+    } else {
+      errEl.textContent = e.message || 'Erro ao trocar senha.';
+    }
+    btn.disabled = false; btn.textContent = 'Salvar nova senha';
+  }
+}
+
+// ── GERENCIAR USUÁRIOS (admin) ───────────────────────────────────────────────
+async function abrirGerenciarUsuarios(){
+  if (!_isAdmin()) { toast('Apenas administradores podem gerenciar usuários.', true); return; }
+  mostrarTela('t-usuarios');
+  // Preenche o campo de senha padrão na UI
+  const senhaEl = document.getElementById('add-senha');
+  if (senhaEl && !senhaEl.value) senhaEl.value = SENHA_PADRAO;
+  await renderListaUsuarios();
+}
+
+async function renderListaUsuarios(){
+  const wrap = document.getElementById('usuarios-lista');
+  if (!wrap) return;
+  wrap.innerHTML = '<p style="color:var(--muted);padding:.6rem;">Carregando...</p>';
+  const usuarios = await _listarUsuarios();
+  if (!usuarios.length) {
+    wrap.innerHTML = '<p style="color:var(--muted);padding:.6rem;">Nenhum fisioterapeuta cadastrado.</p>';
+    return;
+  }
+  wrap.innerHTML = usuarios.map(u => {
+    const adm = ADMIN_EMAILS.includes(u.email);
+    return `<div class="usuario-row">
+      <div class="usuario-info">
+        <strong>${esc(u.nome||u.email)}</strong>${adm?' <span class="tag-admin">ADMIN</span>':''}
+        <span class="usuario-meta">${esc(u.email)}${u.crefito?' · CREFITO '+esc(u.crefito):''}</span>
+      </div>
+      ${adm ? '' : `<button class="btn btn-sm btn-danger" onclick="excluirUsuario('${esc(u.email)}')">Excluir</button>`}
+    </div>`;
+  }).join('');
+}
+
+async function adicionarUsuario(){
+  const nome    = gf('add-nome').trim();
+  const email   = gf('add-email').trim().toLowerCase();
+  const crefito = gf('add-crefito').trim();
+  const senha   = gf('add-senha').trim();
+  const errEl   = document.getElementById('add-err');
+  const btn     = document.getElementById('btn-add-user');
+  errEl.textContent = '';
+
+  if (!nome || !email)             { errEl.textContent = 'Preencha nome e e-mail.'; return; }
+  if (!/\S+@\S+\.\S+/.test(email)) { errEl.textContent = 'E-mail inválido.'; return; }
+  if (!senha || senha.length < 6)  { errEl.textContent = 'Senha provisória precisa de ao menos 6 caracteres.'; return; }
+  if (!APPS_SCRIPT_URL)            { errEl.textContent = 'Cadastro requer Apps Script configurado.'; return; }
+
+  btn.disabled = true; btn.textContent = 'Criando...';
+  try {
+    // 1. Cria a conta de autenticação via Apps Script (não desloga o admin)
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'criar_usuario', email, senha })
+    });
+    const r = await resp.json().catch(() => ({ status:'ok' }));   // no-cors fallback
+    if (r.status && r.status !== 'ok' && !r.jaExiste) {
+      throw new Error(r.msg || 'Falha ao criar conta de login.');
+    }
+    // 2. Grava o perfil no Firestore
+    await db.collection('usuarios_fisio').doc(email).set({
+      nome: nome.toUpperCase(),
+      crefito,
+      role: 'fisio',
+      ativo: true,
+      senhaTrocada: false,   // força troca no 1º acesso
+      criadoEm: new Date().toISOString(),
+      criadoPor: usuarioEmail
+    });
+    toast(r.jaExiste ? '✓ Perfil atualizado (conta já existia)' : '✓ Fisioterapeuta cadastrado!');
+    document.getElementById('add-nome').value    = '';
+    document.getElementById('add-email').value   = '';
+    document.getElementById('add-crefito').value = '';
+    document.getElementById('add-senha').value   = SENHA_PADRAO;
+    await renderListaUsuarios();
+  } catch(e){
+    errEl.textContent = e.message || 'Erro ao criar usuário.';
+  } finally {
+    btn.disabled = false; btn.textContent = '+ Criar fisioterapeuta';
+  }
+}
+
+async function excluirUsuario(email){
+  if (!_isAdmin()) { toast('Apenas administradores podem excluir.', true); return; }
+  if (ADMIN_EMAILS.includes(email)) { toast('Não é possível excluir um administrador.', true); return; }
+  if (!confirm(`Excluir definitivamente o usuário ${email}?\n\nA conta de login e o perfil serão removidos. Esta ação não pode ser desfeita.`)) return;
+  try {
+    // 1. Exclui a conta no Firebase Auth via Apps Script
+    if (APPS_SCRIPT_URL) {
+      try {
+        const resp = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'excluir_usuario', email })
+        });
+        const r = await resp.json().catch(() => ({ status:'ok' }));
+        if (r.status && r.status !== 'ok' && !r.naoExiste) {
+          console.warn('Apps Script excluir_usuario:', r.msg);
+        }
+      } catch(e){ console.warn('Falha ao excluir conta Auth:', e); }
+    }
+    // 2. Remove o perfil do Firestore
+    await db.collection('usuarios_fisio').doc(email).delete();
+    toast('✓ Usuário excluído.');
+    await renderListaUsuarios();
+  } catch(e){
+    toast('Erro: ' + (e.message||e), true);
+  }
 }
 
 // ── TURNO ────────────────────────────────────────────────────────────────────
@@ -2615,11 +2859,41 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  auth.onAuthStateChanged(user => {
+  auth.onAuthStateChanged(async user => {
     if (user) {
       usuarioEmail = user.email;
-      irTelaTurno();
+      try {
+        perfilUsuario = await _carregarPerfil(user.email);
+
+        // Acesso revogado?
+        if (perfilUsuario && perfilUsuario.ativo === false) {
+          toast('Seu acesso foi desativado. Contate o administrador.', true);
+          await auth.signOut();
+          mostrarTela('t-login');
+          return;
+        }
+
+        _atualizarBotaoAdmin();
+
+        // Primeiro acesso: força troca de senha
+        if (perfilUsuario && perfilUsuario.senhaTrocada === false) {
+          const sub = document.getElementById('ts-sub');
+          if (sub) sub.textContent = 'Este é seu primeiro acesso. Defina uma senha pessoal para continuar.';
+          const btnPular = document.getElementById('btn-pular-troca');
+          if (btnPular) btnPular.style.display = 'none';
+          mostrarTela('t-trocasenha');
+          return;
+        }
+
+        irTelaTurno();
+      } catch(e){
+        console.error('[Auth] pós-login:', e);
+        if (!perfilUsuario) perfilUsuario = _perfilSeed((user.email||'').toLowerCase());
+        _atualizarBotaoAdmin();
+        irTelaTurno();
+      }
     } else {
+      perfilUsuario = null;
       mostrarTela('t-login');
     }
   });
