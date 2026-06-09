@@ -660,7 +660,7 @@ function _coletarColuna(){
     pcr:    gf('ac-pcr'),
     jh:     gf('ac-jh'),
     prof:   gf('ac-prof'),
-    autor:  usuarioEmail,
+    autor:  perfilUsuario ? `${perfilUsuario.nome}${perfilUsuario.crefito?' (CREFITO '+perfilUsuario.crefito+')':''}` : usuarioEmail,
     atualizadoEm: new Date().toISOString()
   };
 }
@@ -1387,7 +1387,7 @@ function _coletarDados(){
     cr: gf('f-cr'),
     cm: gf('f-cm'),
     obs: gf('f-obs'),
-    autor: usuarioEmail,
+    autor: perfilUsuario ? `${perfilUsuario.nome}${perfilUsuario.crefito?' (CREFITO '+perfilUsuario.crefito+')':''}` : usuarioEmail,
     criadoEm: new Date().toISOString()
   };
 }
@@ -1661,7 +1661,7 @@ function renderPreviewEm(area, d){
     </div>
 
     <div class="pv-foot">
-      Fisioterapeuta: ${esc(d.autor)||'—'} · ${new Date().toLocaleString('pt-BR')}
+      ${esc(d.autor)||'—'}
     </div>
   `;
 }
