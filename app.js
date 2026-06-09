@@ -1692,20 +1692,12 @@ async function imprimirTurnoCompleto(){
   areaTemp.style.cssText = 'position:fixed;top:0;left:-9999px;width:780px;background:white;z-index:-1;';
   document.body.appendChild(areaTemp);
 
-  // Pré-carrega TODOS os acompanhamentos em paralelo (mais rápido)
-  const acompDocsArr = await Promise.all(comEvolucao.map(it => _buscarAcompDoLeito(it.leito)));
-  const acompDocs = {};
-  comEvolucao.forEach((it, i) => { acompDocs[it.leito] = acompDocsArr[i]; });
-
   const blocos = [];
   for (const item of comEvolucao) {
     try {
       renderPreviewEm(areaTemp, item.ev);
-      _adicionarNotaAcomp(areaTemp, acompDocs[item.leito]);
       await new Promise(r => setTimeout(r, 50));
-      const evHTML = areaTemp.innerHTML;
-      const acompHTML = _renderAcompPaginasHTML(acompDocs[item.leito]);
-      blocos.push({ ev: evHTML, acomp: acompHTML });
+      blocos.push({ ev: areaTemp.innerHTML });
     } catch(e) { console.warn('Erro renderizando leito ' + item.leito + ':', e); }
   }
   document.body.removeChild(areaTemp);
@@ -1726,24 +1718,20 @@ async function imprimirTurnoCompleto(){
     <title>Evoluções ${_labelTurno(turno)} – ${dataBR}</title>
     <style>${cssFull}
       body{background:white;padding:0;margin:0;}
-      /* Páginas nomeadas: retrato para evolução, paisagem para acompanhamento */
-      @page evpage { size: A4 portrait; margin: 12mm; }
-      @page acpage { size: A4 landscape; margin: 8mm; }
-      .pg-ev{ page: evpage; page-break-after: always; break-after: page; padding:18px; }
-      .pg-acomp{ page: acpage; page-break-after: always; break-after: page; padding:6px; }
-      .pg-ev:last-child, .pg-acomp:last-child{ page-break-after: auto; break-after: auto; }
-      .pg-acomp .pdf-acomp-area{ width:100% !important; }
+      @page { size: A4 portrait; margin: 12mm; }
+      .pg-ev{ page-break-after: always; break-after: page; padding:18px; }
+      .pg-ev:last-child{ page-break-after: auto; break-after: auto; }
       @media print{.no-print{display:none!important;}}
       .no-print{background:var(--roxo,#5b2c6f);color:white;padding:10px;text-align:center;position:sticky;top:0;z-index:99;}
       .no-print button{background:white;color:#5b2c6f;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;margin-left:10px;}
     </style>
   </head><body>
     <div class="no-print">
-      ${total} evolução${total>1?'ões':''} · ${_labelTurno(turno)} · ${dataBR} · cada leito = 1 folha retrato (evolução) + folha(s) paisagem (acompanhamento)
+      ${total} evolução${total>1?'ões':''} · ${_labelTurno(turno)} · ${dataBR} · 1 folha retrato por leito
       <button onclick="window.print()">🖨 Imprimir tudo</button>
       <button onclick="window.close()">Fechar</button>
     </div>
-    ${blocos.map(b => `<div class="pg-ev">${b.ev}</div>${b.acomp || ''}`).join('')}
+    ${blocos.map(b => `<div class="pg-ev">${b.ev}</div>`).join('')}
     <script>setTimeout(()=>window.print(),800);<\/script>
   </body></html>`);
   w.document.close();
