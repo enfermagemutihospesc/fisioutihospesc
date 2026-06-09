@@ -1596,24 +1596,60 @@ async function enviarTurnoDrive(){
         }
       }
 
-      // === ANEXA O ACOMPANHAMENTO COMO PÁGINA(S) PAISAGEM ===
-      try {
-        await _anexarAcompAoPDF(pdf, acompDocs[leito]);
-      } catch(eAcomp) { console.warn('Falha ao anexar acomp do leito ' + leito + ':', eAcomp); }
-
+      // === ENVIA PDF DA EVOLUÇÃO (retrato, sem acompanhamento) ===
       const nomePac = (ev.pac || '').trim();
       const primNome = (nomePac.split(' ')[0] || 'Pac').toUpperCase();
       const pastaNome = nomePac
         ? `Leito ${pad(leito)} - ${nomePac}`
         : `Leito ${pad(leito)} - Sem identificacao`;
-      const titulo = `EvolucaoFisio_L${pad(leito)}_${turno}_${dataBR}_${primNome}`;
+      const tituloEv = `EvolucaoFisio_L${pad(leito)}_${turno}_${dataBR}_${primNome}`;
 
-      const base64 = pdf.output('datauristring').split(',')[1];
       await fetch(APPS_SCRIPT_URL, {
         method: 'POST', mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ titulo, arquivoBase64: base64, pasta: pastaNome, pastaRaizId: PASTA_EVOLUCAO_ID })
+        body: JSON.stringify({ titulo: tituloEv, arquivoBase64: pdf.output('datauristring').split(',')[1], pasta: pastaNome, pastaRaizId: PASTA_EVOLUCAO_ID })
       });
+
+      // === ENVIA PDF DO ACOMPANHAMENTO SEPARADO (paisagem) ===
+      const acompDocL = acompDocs[leito];
+      if (acompDocL && acompDocL.colunas && acompDocL.colunas.length) {
+        try {
+          const COLS_POR_PAG = 8;
+          const totalCols = acompDocL.colunas.length;
+          const numPag2 = Math.max(1, Math.ceil(totalCols / COLS_POR_PAG));
+          const areaPdf2 = document.getElementById('acomp-pdf-area');
+          const pdfAcomp2 = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+          const pageWL2 = pdfAcomp2.internal.pageSize.getWidth();
+          const pageHL2 = pdfAcomp2.internal.pageSize.getHeight();
+          const marginL2 = 10;
+          const contentWL2 = pageWL2 - marginL2*2;
+          const contentHL2 = pageHL2 - marginL2*2;
+          for (let p = 0; p < numPag2; p++) {
+            const inicio = p * COLS_POR_PAG;
+            const fim = Math.min(inicio + COLS_POR_PAG, totalCols);
+            areaPdf2.innerHTML = _renderPaginaPDFAcompCom(acompDocL, acompDocL.colunas.slice(inicio, fim), p+1, numPag2, p === numPag2-1);
+            await new Promise(r => setTimeout(r, 120));
+            const cv2 = await html2canvas(areaPdf2.firstElementChild, {
+              scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+              width: 1100, windowWidth: 1100
+            });
+            const mmH2 = (cv2.height / cv2.width) * contentWL2;
+            let lU2 = contentWL2, aU2 = mmH2;
+            if (aU2 > contentHL2) { const f2 = contentHL2/aU2; aU2 = contentHL2; lU2 *= f2; }
+            const offX2 = marginL2 + (contentWL2 - lU2) / 2;
+            if (p > 0) pdfAcomp2.addPage('a4', 'landscape');
+            pdfAcomp2.addImage(cv2.toDataURL('image/jpeg', .92), 'JPEG', offX2, marginL2, lU2, aU2);
+          }
+          areaPdf2.innerHTML = '';
+          const tituloAcomp = `Acompanhamento_L${pad(leito)}_${dataBR}_${primNome}`;
+          await fetch(APPS_SCRIPT_URL, {
+            method: 'POST', mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ titulo: tituloAcomp, arquivoBase64: pdfAcomp2.output('datauristring').split(',')[1], pasta: pastaNome, pastaRaizId: PASTA_ACOMPANHAMENTO_ID })
+          });
+        } catch(eA) { console.warn('Falha acompanhamento leito ' + leito + ':', eA); }
+      }
+
       ok++;
     } catch(e) {
       console.error('Erro leito ' + leito + ':', e);
@@ -1623,7 +1659,7 @@ async function enviarTurnoDrive(){
 
   document.body.removeChild(areaTemp);
   hideLoading();
-  if (erros === 0) toast(`✓ ${ok} PDF${ok>1?'s':''} enviado${ok>1?'s':''} ao Drive (evolução + acompanhamento)`);
+  if (erros === 0) toast(`✓ ${ok} evolução${ok>1?'ões':''} enviadas ao Drive (evolução + acompanhamento separados)`);
   else toast(`${ok} enviados, ${erros} com erro`, erros > 0);
 }
 
@@ -1693,17 +1729,7 @@ async function gerarPDF(){
       }
     }
 
-    // === ANEXA O ACOMPANHAMENTO COMO FOLHA(S) PAISAGEM ===
-    // O arquivo final fica único: evolução (retrato) + acompanhamento (paisagem).
-    status.textContent = 'Anexando acompanhamento...';
-    try {
-      const acompDoc = await _buscarAcompDoLeito(leitoAtual);
-      await _anexarAcompAoPDF(pdf, acompDoc);
-    } catch(eAcomp) {
-      console.warn('Falha ao anexar acompanhamento:', eAcomp);
-    }
-
-    // Nome do arquivo e pasta
+    // === ENVIA PDF DA EVOLUÇÃO (retrato, sem acompanhamento) ===
     const d = _coletarDados();
     const [ano, mes, dia] = (d.data||hoje()).split('-');
     const dataBR = dia + mes + ano;
@@ -1712,27 +1738,73 @@ async function gerarPDF(){
     const pastaNome = nomePac
       ? `Leito ${pad(leitoAtual)} - ${nomePac}`
       : `Leito ${pad(leitoAtual)} - Sem identificacao`;
-    const titulo = `EvolucaoFisio_L${pad(leitoAtual)}_${turno}_${dataBR}_${primNome}`;
+    const tituloEv = `EvolucaoFisio_L${pad(leitoAtual)}_${turno}_${dataBR}_${primNome}`;
 
-    status.textContent = 'Enviando ao Drive...';
-    const dataUri = pdf.output('datauristring');
-    const base64  = dataUri.split(',')[1];
-
+    status.textContent = 'Enviando evolução ao Drive...';
     await fetch(APPS_SCRIPT_URL, {
       method:  'POST',
       mode:    'no-cors',
       headers: { 'Content-Type': 'text/plain' },
       body:    JSON.stringify({
-        titulo,
-        arquivoBase64: base64,
-        pasta: pastaNome,
-        pastaRaizId: PASTA_EVOLUCAO_ID
+        titulo:        tituloEv,
+        arquivoBase64: pdf.output('datauristring').split(',')[1],
+        pasta:         pastaNome,
+        pastaRaizId:   PASTA_EVOLUCAO_ID
       })
     });
 
+    // === ENVIA PDF DO ACOMPANHAMENTO SEPARADO (paisagem) ===
+    status.textContent = 'Enviando acompanhamento ao Drive...';
+    try {
+      const acompDoc = await _buscarAcompDoLeito(leitoAtual);
+      if (acompDoc && acompDoc.colunas && acompDoc.colunas.length) {
+        const pdfAcomp2 = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+        const COLS_POR_PAG = 8;
+        const total2 = acompDoc.colunas.length;
+        const numPag2 = Math.max(1, Math.ceil(total2 / COLS_POR_PAG));
+        const areaPdf = document.getElementById('acomp-pdf-area');
+        const pageWL = pdfAcomp2.internal.pageSize.getWidth();
+        const pageHL = pdfAcomp2.internal.pageSize.getHeight();
+        const marginL = 10;
+        const contentWL = pageWL - marginL*2;
+        const contentHL = pageHL - marginL*2;
+        for (let p = 0; p < numPag2; p++) {
+          const inicio = p * COLS_POR_PAG;
+          const fim = Math.min(inicio + COLS_POR_PAG, total2);
+          areaPdf.innerHTML = _renderPaginaPDFAcompCom(acompDoc, acompDoc.colunas.slice(inicio, fim), p+1, numPag2, p === numPag2-1);
+          await new Promise(r => setTimeout(r, 120));
+          const cv = await html2canvas(areaPdf.firstElementChild, {
+            scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+            width: 1100, windowWidth: 1100
+          });
+          const mmH2 = (cv.height / cv.width) * contentWL;
+          let lU = contentWL, aU = mmH2;
+          if (aU > contentHL) { const f = contentHL/aU; aU = contentHL; lU *= f; }
+          const offX = marginL + (contentWL - lU) / 2;
+          if (p > 0) pdfAcomp2.addPage('a4', 'landscape');
+          pdfAcomp2.addImage(cv.toDataURL('image/jpeg', .92), 'JPEG', offX, marginL, lU, aU);
+        }
+        areaPdf.innerHTML = '';
+        const tituloAcomp = `Acompanhamento_L${pad(leitoAtual)}_${dataBR}_${primNome}`;
+        await fetch(APPS_SCRIPT_URL, {
+          method:  'POST',
+          mode:    'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body:    JSON.stringify({
+            titulo:        tituloAcomp,
+            arquivoBase64: pdfAcomp2.output('datauristring').split(',')[1],
+            pasta:         pastaNome,
+            pastaRaizId:   PASTA_ACOMPANHAMENTO_ID
+          })
+        });
+      }
+    } catch(eAcomp) {
+      console.warn('Falha ao enviar acompanhamento separado:', eAcomp);
+    }
+
     status.textContent = '✓ Enviado ao Drive com sucesso';
     status.style.color = 'var(--verde)';
-    toast('✓ PDF salvo no Drive');
+    toast('✓ PDFs salvos no Drive');
 
   } catch(err) {
     console.error('gerarPDF:', err);
