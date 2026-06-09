@@ -456,3 +456,22 @@ label{font-size:.72rem;font-weight:600;color:var(--muted);}
   .btn-row{justify-content:stretch;}
   .btn-row .btn{flex:1;}
 }
+
+/* ── GERENCIAMENTO DE USUÁRIOS ── */
+.usuario-row{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:8px 10px;border-bottom:1px solid var(--borda);
+}
+.usuario-row:last-child{border-bottom:none;}
+.usuario-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+.usuario-info strong{color:var(--roxo);font-size:.84rem;}
+.usuario-meta{font-size:.72rem;color:var(--muted);}
+.tag-admin{
+  display:inline-block;background:var(--roxo);color:white;
+  font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:8px;
+  letter-spacing:.04em;margin-left:4px;vertical-align:middle;
+}
+.btn-danger{
+  background:var(--vermelho);color:white;border:none;
+}
+.btn-danger:hover{background:#a93226;}
