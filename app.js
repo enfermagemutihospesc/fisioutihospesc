@@ -56,6 +56,20 @@ function hoje(){
   const d = new Date();
   return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
 }
+function ontemDe(dataStr){
+  const [y,m,dd] = dataStr.split('-').map(Number);
+  const d = new Date(y, m-1, dd);
+  d.setDate(d.getDate() - 1);
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+// Retorna a data "correta" do turno:
+// Noturno entre 00h e 06h59 → pertence ao dia anterior (turno que começou às 19h)
+// Todos os outros casos → hoje
+function dataDoTurno(){
+  const h = new Date().getHours();
+  if (turno === 'NOTURNO' && h >= 0 && h <= 6) return ontemDe(hoje());
+  return hoje();
+}
 function fmtD(s){
   if (!s) return '';
   const [y,m,d] = s.split('-');
@@ -449,7 +463,7 @@ async function renderLeitos(){
   const d = await leitosData();
 
   // Monta lista de chaves de evolução dos leitos ocupados para leitura paralela
-  const hojeStr = hoje();
+  const hojeStr = dataDoTurno();
   const chaves = [];
   for (let i = 1; i <= TOTAL; i++) {
     const l = d[i] || { ocupado: false };
@@ -566,14 +580,14 @@ async function abrirAcomp(leito){
 
   // Preenche formulário de nova coluna com data/turno/hora atuais
   _limparFormColuna();
-  setF('ac-data', hoje());
+  setF('ac-data', dataDoTurno());
   setF('ac-turno', turno);
   const agora = new Date();
   setF('ac-hora', pad(agora.getHours()) + ':' + pad(agora.getMinutes()));
   setF('ac-prof', (usuarioEmail||'').split('@')[0]);
 
   // Se já existe uma coluna para este turno/hoje, carrega em modo edição
-  const idxExistente = doc.colunas.findIndex(c => c.data === hoje() && c.turno === turno);
+  const idxExistente = doc.colunas.findIndex(c => c.data === dataDoTurno() && c.turno === turno);
   if (idxExistente >= 0) {
     _carregarFormColuna(doc.colunas[idxExistente], idxExistente);
     toast('Coluna deste turno já existe — editando');
@@ -623,7 +637,7 @@ function editarColunaAcomp(idx){
 
 function cancelarEdicaoColuna(){
   _limparFormColuna();
-  setF('ac-data', hoje());
+  setF('ac-data', dataDoTurno());
   setF('ac-turno', turno);
   const agora = new Date();
   setF('ac-hora', pad(agora.getHours()) + ':' + pad(agora.getMinutes()));
@@ -844,7 +858,7 @@ function _renderEventosAcomp(){
 
 async function adicionarEventoAcomp(){
   if (!acompAtual) return;
-  const data  = gf('ac-ev-data') || hoje();
+  const data  = gf('ac-ev-data') || dataDoTurno();
   const texto = gf('ac-ev-texto').trim();
   if (!texto) { toast('Descreva o evento', true); return; }
   if (!acompAtual.eventos) acompAtual.eventos = [];
@@ -1069,7 +1083,7 @@ async function abrirForm(leito){
   // Preenche dados fixos do leito
   setF('f-pac', l.pac || '');
   setF('f-leito', pad(leito));
-  setF('f-data', hoje());
+  setF('f-data', dataDoTurno());
   setF('f-diag', (l.diag || '').toUpperCase());
   setF('f-sexo', l.sexo || '');
 
@@ -1088,7 +1102,7 @@ async function abrirForm(leito){
   _montarAspiracao();
 
   // Carrega evolução existente, se houver
-  const ev = await dbGet(evKey(leito, turno, hoje()));
+  const ev = await dbGet(evKey(leito, turno, dataDoTurno()));
   if (ev) {
     _carregarDadosForm(ev);
     toast('📄 Evolução existente carregada');
@@ -1100,7 +1114,7 @@ async function abrirForm(leito){
   }
 
   // Atualiza header
-  document.getElementById('form-sub').textContent = `Leito ${pad(leito)} · ${_labelTurno(turno)} · ${fmtD(hoje())}`;
+  document.getElementById('form-sub').textContent = `Leito ${pad(leito)} · ${_labelTurno(turno)} · ${fmtD(dataDoTurno())}`;
   const b = document.getElementById('badge-form');
   const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[turno] || turno;
@@ -1176,20 +1190,19 @@ async function _herdarMedicacoes(leito){
 // NÃO herda: SSVV, condutas, HFA, observações, aspirações, data.
 async function _herdarCamposAnterior(leito){
   const turnosOrdem = ['DIURNO','NOTURNO'];
-  const hj = hoje();
+  const dtT = dataDoTurno();
 
-  // 1) Busca em outro turno de HOJE
+  // 1) Busca em outro turno do MESMO DIA DO TURNO atual
   let evAnterior = null;
   for (const t of turnosOrdem) {
     if (t === turno) continue;
-    const ev = await dbGet(evKey(leito, t, hj));
+    const ev = await dbGet(evKey(leito, t, dtT));
     if (ev) { evAnterior = ev; break; }
   }
-  // 2) Se não achou, busca em turnos de ONTEM (noturno primeiro = mais recente)
+  // 2) Se não achou, busca em turnos do dia anterior ao do turno atual
+  //    (noturno primeiro = mais recente)
   if (!evAnterior) {
-    const ontem = new Date();
-    ontem.setDate(ontem.getDate() - 1);
-    const ontemStr = ontem.getFullYear() + '-' + pad(ontem.getMonth()+1) + '-' + pad(ontem.getDate());
+    const ontemStr = ontemDe(dtT);
     for (const t of ['NOTURNO','DIURNO']) {
       const ev = await dbGet(evKey(leito, t, ontemStr));
       if (ev) { evAnterior = ev; break; }
@@ -1397,7 +1410,7 @@ function _coletarDados(){
 }
 
 function _carregarDadosForm(d){
-  setF('f-data', d.data || hoje());
+  setF('f-data', d.data || dataDoTurno());
   setF('f-idade', d.idade);
   setF('f-diag', d.diag);
   setF('f-dtot', d.dtot); setF('f-dtqt', d.dtqt);
@@ -1464,7 +1477,7 @@ async function gerarPreview(){
   // Salva no Firestore: evolução + acompanhamento (cabeçalho longitudinal e coluna do turno).
   showLoading('Salvando...');
   try {
-    await dbSet(evKey(leitoAtual, turno, hoje()), dados);
+    await dbSet(evKey(leitoAtual, turno, dataDoTurno()), dados);
 
     // Auto-salva acompanhamento sem interromper com toasts/confirm.
     if (acompAtual) {
@@ -1495,7 +1508,7 @@ async function gerarPreview(){
   const mapa = { DIURNO:'☀ DIURNO', NOTURNO:'🌙 NOTURNO' };
   b.textContent = mapa[turno] || turno;
   b.className = 'badge ' + (turno === 'NOTURNO' ? 'badge-n' : 'badge-d');
-  document.getElementById('prev-sub').textContent = `Leito ${pad(leitoAtual)} · ${_labelTurno(turno)} · ${fmtD(hoje())}`;
+  document.getElementById('prev-sub').textContent = `Leito ${pad(leitoAtual)} · ${_labelTurno(turno)} · ${fmtD(dataDoTurno())}`;
   irPreview();
 }
 
@@ -1678,7 +1691,7 @@ async function imprimirTurnoCompleto(){
     .sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
   if (!ocupados.length) { toast('Nenhum leito ocupado.'); return; }
 
-  const hj = hoje();
+  const hj = dataDoTurno();
   const comEvolucao = [];
   for (const [k, pac] of ocupados) {
     const leito = parseInt(k);
@@ -1751,7 +1764,7 @@ async function enviarTurnoDrive(){
     .sort((a,b) => parseInt(a[0]) - parseInt(b[0]));
   if (!ocupados.length) { toast('Nenhum leito ocupado.'); return; }
 
-  const hj = hoje();
+  const hj = dataDoTurno();
   const comEvolucao = [];
   for (const [k, pac] of ocupados) {
     const leito = parseInt(k);
@@ -1967,7 +1980,7 @@ async function gerarPDF(){
 
     // === ENVIA PDF DA EVOLUÇÃO (retrato, sem acompanhamento) ===
     const d = _coletarDados();
-    const [ano, mes, dia] = (d.data||hoje()).split('-');
+    const [ano, mes, dia] = (d.data||dataDoTurno()).split('-');
     const dataBR = dia + mes + ano;
     const nomePac = (d.pac || '').trim();
     const primNome = (nomePac.split(' ')[0] || 'Pac').toUpperCase();
