@@ -192,10 +192,45 @@ const TOTAL = 10; // leitos
           <div><label>Sexo</label><input type="text" id="f-sexo" readonly style="background:var(--cinza);max-width:70px;"></div>
         </div>
         <div><label>Diagnóstico</label><input type="text" id="f-diag"></div>
+
+        <!-- VIA AÉREA (TOT/TQT) -->
+        <div class="via-aerea-box">
+          <label style="margin-bottom:6px;">Via aérea artificial</label>
+          <div class="dc">
+            <div>
+              <label style="font-size:.68rem;">Tipo</label>
+              <select id="f-via-tipo" onchange="onViaTipoOuDataMudou()">
+                <option value="">Nenhuma</option>
+                <option value="TOT">TOT (intubação)</option>
+                <option value="TQT">TQT (traqueostomia)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:.68rem;">Data de instalação</label>
+              <input type="date" id="f-via-instalacao" onchange="onViaTipoOuDataMudou()">
+            </div>
+            <div style="flex:0 0 auto;display:flex;align-items:flex-end;">
+              <div class="via-contador" id="via-contador">– dias</div>
+            </div>
+          </div>
+          <div class="dc" id="via-retirar-row" style="margin-top:4px;">
+            <div style="flex:0 0 auto;">
+              <button type="button" class="btn btn-sec btn-sm" id="btn-via-retirar" onclick="retirarVia()">Retirar</button>
+            </div>
+          </div>
+          <div class="dc" id="via-retirada-row" style="display:none;margin-top:4px;">
+            <div>
+              <label style="font-size:.68rem;">Data de retirada</label>
+              <input type="date" id="f-via-retirada" onchange="onViaRetiradaMudou()">
+            </div>
+            <div style="flex:0 0 auto;">
+              <button type="button" class="btn btn-sec btn-sm" id="btn-via-reabrir" onclick="reabrirVia()">↺ Desfazer retirada</button>
+            </div>
+          </div>
+          <div id="via-historico" style="display:none;"></div>
+        </div>
+
         <div class="dc">
-          <div><label>Dias de TOT</label><input type="number" id="f-dtot" min="0"></div>
-          <div><label>Dias de TQT</label><input type="number" id="f-dtqt" min="0"></div>
-          <div><label>Data EXTB</label><input type="date" id="f-extb"></div>
           <div><label>Data RE-IOT</label><input type="date" id="f-reiot"></div>
         </div>
       </div>
