@@ -206,6 +206,24 @@ label{font-size:.72rem;font-weight:600;color:var(--muted);}
 .dc{display:flex;gap:8px;flex-wrap:wrap;}
 .dc > div{flex:1;min-width:90px;}
 
+/* Via aérea (TOT/TQT) */
+.via-aerea-box{
+  border:1px solid var(--borda);border-radius:var(--r);padding:8px 10px;
+  background:var(--cinza);display:flex;flex-direction:column;gap:4px;
+}
+.via-aerea-box > label{font-size:.74rem;font-weight:700;color:var(--roxo);}
+.via-contador{
+  background:var(--roxo);color:white;font-weight:700;font-size:.85rem;
+  padding:6px 12px;border-radius:6px;white-space:nowrap;text-align:center;min-width:64px;
+}
+.via-contador.retirada{background:var(--verde);}
+.via-contador.vazia{background:var(--muted);}
+.via-historico{
+  font-size:.7rem;color:var(--muted);border-top:1px dashed var(--borda);
+  margin-top:4px;padding-top:4px;display:flex;flex-direction:column;gap:2px;
+}
+.via-historico-item{display:flex;justify-content:space-between;gap:8px;}
+
 /* Medicações em grid */
 .med-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;}
 .med-row{display:flex;align-items:center;gap:5px;font-size:.76rem;}
