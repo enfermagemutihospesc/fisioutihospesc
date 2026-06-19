@@ -1165,10 +1165,11 @@ function _limparCamposEditaveis(){
     'f-vmodo','f-vt','f-cest','f-pcps','f-vfr','f-raw','f-peep',
     'f-vm','f-ppt','f-fio2','f-tins','f-dp','f-fluxo','f-ie','f-apeep',
     'f-cn-lmin','f-mv-fio2','f-mnr-lmin',
-    'f-dtot','f-dtqt','f-extb','f-reiot',
+    'f-reiot',
     'f-cr','f-cm','f-obs'
   ];
   ids.forEach(id => setF(id, ''));
+  _limparVias();
   // MRC
   ['ombro','cotov','punho','quad','joel','dors'].forEach(g => {
     setF(`f-mrc-${g}-d`, '');
@@ -1183,6 +1184,173 @@ function _limparCamposEditaveis(){
 async function _herdarMedicacoes(leito){
   // Delega à função genérica abaixo
   await _herdarCamposAnterior(leito);
+}
+
+// ── VIA AÉREA ARTIFICIAL (TOT/TQT) ──────────────────────────────────────────
+// Estrutura: vias = [ {tipo:'TOT'|'TQT', dataInstalacao:'YYYY-MM-DD', dataRetirada:'YYYY-MM-DD'|null}, ... ]
+// A última entrada do array é a "atual" (exibida no formulário); as anteriores
+// compõem o histórico mostrado abaixo do bloco.
+let viasAtuais = [];
+
+function _viaCorrente(){
+  return viasAtuais.length ? viasAtuais[viasAtuais.length - 1] : null;
+}
+
+function _diasViaAtual(via){
+  if (!via || !via.dataInstalacao) return null;
+  const fim = via.dataRetirada || hoje();
+  return _diasEntre(via.dataInstalacao, fim);
+}
+
+function _limparVias(){
+  viasAtuais = [];
+  setF('f-via-tipo', '');
+  setF('f-via-instalacao', '');
+  setF('f-via-retirada', '');
+  document.getElementById('via-retirar-row').style.display = '';
+  document.getElementById('via-retirada-row').style.display = 'none';
+  const btnReabrir = document.getElementById('btn-via-reabrir');
+  btnReabrir.textContent = '↺ Desfazer retirada';
+  btnReabrir.setAttribute('onclick', 'reabrirVia()');
+  _renderViaContador();
+  _renderViaHistorico();
+}
+
+function _renderViaContador(){
+  const cont = document.getElementById('via-contador');
+  const via = _viaCorrente();
+  if (!via || !via.tipo || !via.dataInstalacao) {
+    cont.textContent = '– dias';
+    cont.className = 'via-contador vazia';
+    return;
+  }
+  const dias = _diasViaAtual(via);
+  const txt = dias == null ? '– dias' : `${dias} dia${dias===1?'':'s'}`;
+  if (via.dataRetirada) {
+    cont.textContent = `${txt} (retirado)`;
+    cont.className = 'via-contador retirada';
+  } else {
+    cont.textContent = txt;
+    cont.className = 'via-contador';
+  }
+}
+
+function _renderViaHistorico(){
+  const box = document.getElementById('via-historico');
+  const anteriores = viasAtuais.slice(0, -1);
+  if (!anteriores.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.className = 'via-historico';
+  box.innerHTML = anteriores.map(v => {
+    const dias = _diasEntre(v.dataInstalacao, v.dataRetirada || hoje());
+    return `<div class="via-historico-item">
+      <span>${v.tipo} · ${fmtD(v.dataInstalacao)} → ${v.dataRetirada ? fmtD(v.dataRetirada) : 'em curso'}</span>
+      <span>${dias != null ? dias + ' dias' : '—'}</span>
+    </div>`;
+  }).join('');
+}
+
+function _renderVias(){
+  const via = _viaCorrente();
+  setF('f-via-tipo', via ? via.tipo : '');
+  setF('f-via-instalacao', via ? via.dataInstalacao : '');
+  setF('f-via-retirada', via ? (via.dataRetirada || '') : '');
+  const jaRetirada = !!(via && via.dataRetirada);
+  document.getElementById('via-retirar-row').style.display = (via && !jaRetirada) ? '' : 'none';
+  document.getElementById('via-retirada-row').style.display = jaRetirada ? '' : 'none';
+  const btnReabrir = document.getElementById('btn-via-reabrir');
+  if (jaRetirada) {
+    btnReabrir.textContent = '↺ Desfazer retirada';
+    btnReabrir.setAttribute('onclick', 'reabrirVia()');
+  }
+  _renderViaContador();
+  _renderViaHistorico();
+}
+
+// Chamado quando o usuário troca o tipo (TOT/TQT/Nenhuma) ou define a data de instalação.
+function onViaTipoOuDataMudou(){
+  const tipo = gf('f-via-tipo');
+  const dataInst = gf('f-via-instalacao');
+  let via = _viaCorrente();
+
+  if (!tipo) {
+    // Selecionou "Nenhuma": não fecha histórico, apenas não há via ativa.
+    if (via && !via.dataRetirada) {
+      // Estava ativa e o usuário zerou o tipo — mantém no histórico sem fechar
+      // automaticamente (evita perder data de instalação por engano).
+    }
+    setF('f-via-instalacao', '');
+    setF('f-via-retirada', '');
+    document.getElementById('via-retirar-row').style.display = 'none';
+    document.getElementById('via-retirada-row').style.display = 'none';
+    _renderViaContador();
+    return;
+  }
+
+  if (!via || via.dataRetirada || via.tipo !== tipo) {
+    // Não há via ativa, a ativa já foi retirada, ou o tipo mudou (ex: TOT → TQT):
+    // inicia um novo período no histórico.
+    via = { tipo, dataInstalacao: dataInst || hoje(), dataRetirada: null };
+    viasAtuais.push(via);
+  } else {
+    // Mesma via ainda ativa — apenas atualiza a data de instalação.
+    via.dataInstalacao = dataInst || via.dataInstalacao;
+  }
+  _renderVias();
+}
+
+function retirarVia(){
+  const via = _viaCorrente();
+  if (!via || via.dataRetirada) return;
+  // Revela o campo de data de retirada, pré-preenchido com a data do turno atual.
+  // A retirada só é efetivada quando o usuário confirma (onViaRetiradaMudou/confirmarRetirada).
+  setF('f-via-retirada', dataDoTurno());
+  document.getElementById('via-retirar-row').style.display = 'none';
+  document.getElementById('via-retirada-row').style.display = '';
+  document.getElementById('btn-via-reabrir').textContent = '✕ Cancelar retirada';
+  document.getElementById('btn-via-reabrir').setAttribute('onclick', 'cancelarRetiradaVia()');
+}
+
+function confirmarRetirada(){
+  const via = _viaCorrente();
+  if (!via) return;
+  via.dataRetirada = gf('f-via-retirada') || dataDoTurno();
+  document.getElementById('btn-via-reabrir').textContent = '↺ Desfazer retirada';
+  document.getElementById('btn-via-reabrir').setAttribute('onclick', 'reabrirVia()');
+  _renderVias();
+  toast(`${via.tipo} retirado(a)`);
+}
+
+function cancelarRetiradaVia(){
+  // Volta ao estado "ainda instalada", sem registrar data de retirada.
+  setF('f-via-retirada', '');
+  document.getElementById('via-retirar-row').style.display = '';
+  document.getElementById('via-retirada-row').style.display = 'none';
+  document.getElementById('btn-via-reabrir').textContent = '↺ Desfazer retirada';
+  document.getElementById('btn-via-reabrir').setAttribute('onclick', 'reabrirVia()');
+}
+
+function reabrirVia(){
+  const via = _viaCorrente();
+  if (!via || !via.dataRetirada) return;
+  if (!confirm('Desfazer a retirada e reabrir esta via aérea como ativa?')) return;
+  via.dataRetirada = null;
+  setF('f-via-retirada', '');
+  _renderVias();
+}
+
+function onViaRetiradaMudou(){
+  const via = _viaCorrente();
+  if (!via) return;
+  if (via.dataRetirada) {
+    // Já confirmada — apenas ajusta a data.
+    via.dataRetirada = gf('f-via-retirada') || via.dataRetirada;
+    _renderViaContador();
+    _renderViaHistorico();
+  } else {
+    // Ainda não confirmada — o campo está visível em modo "pendente de confirmação".
+    confirmarRetirada();
+  }
 }
 
 // Busca a evolução ANTERIOR mais recente (outro turno do mesmo dia ou turno
@@ -1210,10 +1378,13 @@ async function _herdarCamposAnterior(leito){
   }
   if (!evAnterior) return;
 
-  // ── HERDA: Dias TOT / TQT ─────────────────────────────────────
-  if (evAnterior.dtot) setF('f-dtot', evAnterior.dtot);
-  if (evAnterior.dtqt) setF('f-dtqt', evAnterior.dtqt);
-  if (evAnterior.extb)  setF('f-extb',  evAnterior.extb);
+  // ── HERDA: Via aérea artificial (TOT/TQT) ──────────────────────
+  // Herda o histórico completo; a data de instalação original é preservada
+  // e o contador de dias é recalculado a partir de hoje automaticamente.
+  if (Array.isArray(evAnterior.vias) && evAnterior.vias.length) {
+    viasAtuais = evAnterior.vias.map(v => ({...v}));
+    _renderVias();
+  }
   if (evAnterior.reiot) setF('f-reiot', evAnterior.reiot);
 
   // ── HERDA: Medicações em infusão ──────────────────────────────
@@ -1349,6 +1520,12 @@ function _coletarDados(){
     if (nome) outras.push({ nome, dose });
   });
 
+  // Deriva extb (data de retirada da via corrente, se houver) para compatibilidade
+  // com os indicadores que medem sucesso/falha de extubação.
+  const viaAtual = _viaCorrente();
+  const extbDerivado = viaAtual ? (viaAtual.dataRetirada || '') : '';
+  const diasViaAtual = viaAtual ? _diasViaAtual(viaAtual) : null;
+
   return {
     leito: leitoAtual,
     turno,
@@ -1357,9 +1534,9 @@ function _coletarDados(){
     sexo: gf('f-sexo'),
     idade: gf('f-idade'),
     diag: gf('f-diag'),
-    dtot: gf('f-dtot'),
-    dtqt: gf('f-dtqt'),
-    extb: gf('f-extb'),
+    vias: viasAtuais,
+    extb: extbDerivado,
+    diasVia: diasViaAtual,
     reiot: gf('f-reiot'),
     hfa: gf('f-hfa'),
     med: {
@@ -1413,8 +1590,9 @@ function _carregarDadosForm(d){
   setF('f-data', d.data || dataDoTurno());
   setF('f-idade', d.idade);
   setF('f-diag', d.diag);
-  setF('f-dtot', d.dtot); setF('f-dtqt', d.dtqt);
-  setF('f-extb', d.extb); setF('f-reiot', d.reiot);
+  viasAtuais = Array.isArray(d.vias) ? d.vias.map(v => ({...v})) : [];
+  _renderVias();
+  setF('f-reiot', d.reiot);
   setF('f-hfa', d.hfa);
   if (d.med) {
     setF('f-med-nora', d.med.nora); setF('f-med-dobu', d.med.dobu);
@@ -1512,6 +1690,25 @@ async function gerarPreview(){
   irPreview();
 }
 
+// Monta a exibição de via aérea no preview/PDF, compatível com evoluções
+// antigas (campos dtot/dtqt/extb) e novas (array vias).
+function _fmtViaPreview(d){
+  if (Array.isArray(d.vias) && d.vias.length) {
+    const atual = d.vias[d.vias.length - 1];
+    const dias = _diasEntre(atual.dataInstalacao, atual.dataRetirada || d.data || hoje());
+    let txt = `<span><strong>${atual.tipo}:</strong> ${dias != null ? dias + ' dia'+(dias===1?'':'s') : '—'}`;
+    if (atual.dataRetirada) txt += ` (retirado em ${fmtD(atual.dataRetirada)})`;
+    txt += `</span>`;
+    return txt;
+  }
+  // Formato legado
+  let out = '';
+  if (d.dtot) out += `<span><strong>Dias TOT:</strong> ${esc(d.dtot)}</span>`;
+  if (d.dtqt) out += `<span><strong>Dias TQT:</strong> ${esc(d.dtqt)}</span>`;
+  if (d.extb) out += `<span><strong>EXTB:</strong> ${fmtD(d.extb)}</span>`;
+  return out;
+}
+
 function renderPreview(d){
   const area = document.getElementById('preview-area');
   renderPreviewEm(area, d);
@@ -1568,9 +1765,7 @@ function renderPreviewEm(area, d){
         <span><strong>Diagnóstico:</strong> ${esc(d.diag)||'—'}</span>
       </div>
       <div class="pv-row" style="margin-top:3px;">
-        ${d.dtot ? `<span><strong>Dias TOT:</strong> ${esc(d.dtot)}</span>` : ''}
-        ${d.dtqt ? `<span><strong>Dias TQT:</strong> ${esc(d.dtqt)}</span>` : ''}
-        ${d.extb ? `<span><strong>EXTB:</strong> ${fmtD(d.extb)}</span>` : ''}
+        ${_fmtViaPreview(d)}
         ${d.reiot ? `<span><strong>RE-IOT:</strong> ${fmtD(d.reiot)}</span>` : ''}
       </div>
     </div>
@@ -2263,8 +2458,8 @@ const FICHAS_FISIO = {
   },
   desm_tempo_vmi: {
     nome: 'Tempo médio em VMI até extubação',
-    conceituacao: 'Média dos dias de TOT registrados nas evoluções no momento da extubação (data EXTB preenchida).',
-    formula: 'Σ dtot nas evoluções com EXTB no período / nº de extubações.'
+    conceituacao: 'Média dos dias de via aérea artificial (TOT/TQT) até a data de retirada registrada nas evoluções.',
+    formula: 'Σ dias de via aérea (instalação → retirada) nas evoluções com retirada no período / nº de extubações.'
   },
   mob_cobertura: {
     nome: 'Cobertura fisioterapêutica',
@@ -2417,11 +2612,12 @@ function _indDesmame(periodo){
     });
   });
 
-  // Tempo médio em VMI até extubação: dtot nas evoluções com EXTB no período
+  // Tempo médio em VMI até extubação: dias da via aérea nas evoluções com EXTB no período
   const dtotsExt = [];
   evolucoes.forEach(e => {
     if (!e.extb || !_dentroPeriodo(e.extb, periodo)) return;
-    const d = parseInt(e.dtot);
+    // Novo formato: diasVia calculado a partir de vias[]. Legado: campo dtot manual.
+    let d = (typeof e.diasVia === 'number') ? e.diasVia : parseInt(e.dtot);
     if (!isNaN(d) && d > 0) dtotsExt.push(d);
   });
   const tempoMedioVMI = dtotsExt.length
