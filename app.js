@@ -1269,7 +1269,7 @@ async function _herdarCamposAnterior(leito){
   }
 
   // Aviso discreto de que houve herança
-  const fmtOrigem = evAnterior.data === hj
+  const fmtOrigem = evAnterior.data === dtT
     ? `turno ${_labelTurno(evAnterior.turno).toLowerCase()}`
     : `${fmtD(evAnterior.data)} ${_labelTurno(evAnterior.turno).toLowerCase()}`;
   toast(`↻ Campos herdados do ${fmtOrigem}`);
